@@ -38,6 +38,13 @@ interface FishV {
   pos: THREE.Vector3; vel: THREE.Vector3; yaw: number; phase: number;
   target: THREE.Vector3; retarget: number; dashT: number; dashCool: number;
   spawnT: number; floatT: number;
+  mode: number;            // 0 cruise · 1 graze · 2 hover
+  modeT: number;
+  bobPh: number;
+  flickCool: number; flickT: number;
+  startleT: number; startleDir: THREE.Vector3;
+  sandCool: number;
+  wanderYaw: number;
 }
 interface Pellet { mesh: THREE.Mesh; vel: THREE.Vector3; settled: boolean; life: number; wob: number; }
 interface LeafSway { piv: THREE.Object3D; base: number; ph: number; sp: number; }
@@ -87,6 +94,7 @@ export class Engine {
   private beamMats: THREE.ShaderMaterial[] = [];
   private stripMats: THREE.MeshStandardMaterial[] = [];
   private beamLight: THREE.PointLight | null = null;
+  private disturbances: { x: number; y: number; z: number; age: number }[] = [];
 
   onFrame: ((dt: number) => void) | null = null;
   onWaterClick: ((x: number, y: number) => void) | null = null;
@@ -142,6 +150,7 @@ export class Engine {
   setDaylight(d: number) { this.daylight = d; }
   setOxygen(o: number) { this.oxygen = o; }
   shake(amp: number) { this.shakeT = 1; this.shakeAmp = Math.max(this.shakeAmp, amp); }
+  disturb(x: number, y: number, z: number) { this.disturbances.push({ x, y, z, age: 0 }); }
 
   clearDynamic() {
     for (const f of this.fishes) this.scene.remove(f.rig.group);
@@ -648,6 +657,9 @@ export class Engine {
       id, def, rig, pos, vel: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0, 0),
       yaw: Math.random() * Math.PI * 2, phase: Math.random() * 9,
       target: pos.clone(), retarget: 0, dashT: 0, dashCool: 3 + Math.random() * 5, spawnT: 0, floatT: 0,
+      mode: 0, modeT: Math.random() * 2, bobPh: Math.random() * 9,
+      flickCool: 1 + Math.random() * 3, flickT: 0,
+      startleT: 0, startleDir: new THREE.Vector3(), sandCool: 1, wanderYaw: 0,
     };
     this.fishes.push(fv);
     rig.group.scale.setScalar(scale);
@@ -661,7 +673,7 @@ export class Engine {
 
   markDead(id: string) {
     const f = this.fishes.find((x) => x.id === id);
-    if (f && f.floatT === 0) { f.rig.setDead(); f.floatT = 0.001; }
+    if (f && f.floatT === 0) { f.rig.setDead(); f.floatT = 0.001; this.disturb(f.pos.x, f.pos.y, f.pos.z); }
   }
 
   dropPellets(n: number, atX?: number, atY?: number) {
@@ -803,6 +815,10 @@ export class Engine {
   }
 
   private updateFishes(dt: number) {
+    for (let di = this.disturbances.length - 1; di >= 0; di--) {
+      this.disturbances[di].age += dt;
+      if (this.disturbances[di].age > 1.1) this.disturbances.splice(di, 1);
+    }
     for (let i = this.fishes.length - 1; i >= 0; i--) {
       const f = this.fishes[i];
       const sim = this.bridge?.getFish(f.id);
@@ -840,10 +856,35 @@ export class Engine {
       const size = sim.scale;
       const L = f.def.L * size;
       const hunger = sim.hunger;
+      const P = persp(f.def);
+      const isSchool = f.def.ai === "school";
       const yBand: [number, number] = f.def.ai === "bottom" ? [0.9, 2.1] : f.def.ai === "ambush" ? [2.3, 5.2] : [1.2, 5.4];
       const bx = TANK.hx - L * 0.6, bz = TANK.hz - L * 0.2;
 
-      // retarget
+      // ── startle: small fish bolt away from a recent disturbance ──
+      if (f.startleT <= 0 && f.def.ai !== "ambush") {
+        for (const d of this.disturbances) {
+          const dx = f.pos.x - d.x, dy = f.pos.y - d.y, dz = f.pos.z - d.z;
+          const rr = dx * dx + dy * dy + dz * dz;
+          if (rr < 10) {
+            const inv = 1 / Math.max(0.4, Math.sqrt(rr));
+            f.startleDir.set(dx * inv, dy * inv * 0.35, dz * inv);
+            f.startleT = 0.5 + Math.random() * 0.35;
+            break;
+          }
+        }
+      }
+
+      // ── pick a behaviour mode ──
+      f.modeT -= dt;
+      if (f.modeT <= 0 && f.startleT <= 0 && !f.dashT) {
+        const r = Math.random();
+        if (r < P.graze && f.def.ai !== "ambush") { f.mode = 1; f.modeT = 2.4 + Math.random() * 2.6; }
+        else if (r < P.graze + P.hover) { f.mode = 2; f.modeT = 1.1 + Math.random() * 1.9; }
+        else { f.mode = 0; f.modeT = 2 + Math.random() * 3; }
+      }
+
+      // ── choose a target ──
       f.retarget -= dt;
       let seekPellet: Pellet | null = null;
       if (hunger > 38 && this.pellets.length) {
@@ -856,25 +897,62 @@ export class Engine {
       }
       if (seekPellet) {
         f.target.copy(seekPellet.mesh.position);
+        f.mode = 0;
+      } else if (f.mode === 1) {
+        // graze the sand
+        if (f.retarget <= 0) {
+          f.retarget = 1.2 + Math.random() * 1.6;
+          f.target.set((Math.random() - 0.5) * 2 * bx * 0.8, yBand[0] - 0.15, (Math.random() - 0.5) * 2 * bz * 0.7);
+        }
+        f.sandCool -= dt;
+        if (f.sandCool <= 0 && f.pos.y < yBand[0] + 0.55) {
+          f.sandCool = 0.7 + Math.random() * 0.9;
+          this.emitBubble(f.pos.x + (Math.random() - 0.5) * 0.5, TANK.y0 + 0.15, f.pos.z + (Math.random() - 0.5) * 0.5);
+        }
       } else if (f.retarget <= 0) {
         f.retarget = 2.5 + Math.random() * 4;
         let tx = (Math.random() - 0.5) * 2 * bx * 0.9;
         let ty = yBand[0] + Math.random() * (yBand[1] - yBand[0]);
         const tz = (Math.random() - 0.5) * 2 * bz * 0.85;
-        if (f.def.ai === "school") {
+        if (isSchool) {
           let cx = 0, cy = 0, cz = 0, n = 0;
           for (const o of this.fishes) if (o !== f && o.def.id === f.def.id && o.floatT === 0) { cx += o.pos.x; cy += o.pos.y; cz += o.pos.z; n++; }
-          if (n > 0) { tx = tx * 0.45 + (cx / n) * 0.55; ty = ty * 0.45 + (cy / n) * 0.55; }
+          if (n > 0) { tx = tx * 0.4 + (cx / n) * 0.6; ty = ty * 0.4 + (cy / n) * 0.6; }
         }
         f.target.set(tx, ty, tz);
       }
-      // ambush dashes
-      let spdMul = 1 + Math.max(0, hunger - 40) * 0.006;
+
+      // ── boids: separation + alignment for shoaling fish ──
+      let sepX = 0, sepY = 0, sepZ = 0, aliX = 0, aliZ = 0, mates = 0;
+      if (isSchool) {
+        for (const o of this.fishes) {
+          if (o === f || o.def.id !== f.def.id || o.floatT > 0) continue;
+          const dx = f.pos.x - o.pos.x, dy = f.pos.y - o.pos.y, dz = f.pos.z - o.pos.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < 4) {
+            mates++;
+            aliX += o.vel.x; aliZ += o.vel.z;
+            if (d2 < 0.9) { const inv = 1 / Math.max(0.15, d2); sepX += dx * inv; sepY += dy * inv; sepZ += dz * inv; }
+          }
+        }
+      }
+
+      // ── speed ──
+      let spdMul = (1 + Math.max(0, hunger - 40) * 0.006) * P.drive;
+      if (f.mode === 2) spdMul *= 0.35;
+      else if (f.mode === 1) spdMul *= 0.6;
+      if (seekPellet) spdMul *= 1.35;
+
+      // ambush: hold near-still, then explosive lunge
       if (f.def.ai === "ambush") {
         f.dashCool -= dt;
-        if (f.dashCool <= 0 && f.dashT <= 0) { f.dashT = 0.55; f.dashCool = 5 + Math.random() * 6; this.emitBubble(f.pos.x, f.pos.y, f.pos.z, true); }
-        if (f.dashT > 0) { f.dashT -= dt; spdMul *= 3.4; }
-        else spdMul *= 0.45;
+        if (f.dashCool <= 0 && f.dashT <= 0) {
+          f.dashT = 0.5; f.dashCool = 5 + Math.random() * 6;
+          this.emitBubble(f.pos.x, f.pos.y, f.pos.z, true);
+          this.disturb(f.pos.x, f.pos.y, f.pos.z);
+        }
+        if (f.dashT > 0) { f.dashT -= dt; spdMul *= 3.6; }
+        else spdMul *= 0.3;
       }
 
       const cruise = f.def.speed * (0.6 + size * 0.4);
@@ -882,36 +960,62 @@ export class Engine {
       const dist = desired.length();
       if (dist > 0.05) desired.normalize().multiplyScalar(cruise * spdMul);
       else desired.set(0, 0, 0);
-      f.vel.lerp(desired, Math.min(1, dt * (seekPellet ? 3.2 : 1.6)));
-      const maxSp = cruise * spdMul * 1.4;
+
+      if (f.startleT > 0) {
+        f.startleT -= dt;
+        desired.copy(f.startleDir).multiplyScalar(cruise * 3.1);
+      }
+      if (isSchool && !seekPellet && f.startleT <= 0 && mates > 0) {
+        desired.x += (aliX / mates - f.vel.x) * 0.5 + sepX * 0.9;
+        desired.z += (aliZ / mates - f.vel.z) * 0.5 + sepZ * 0.9;
+        desired.y += sepY * 0.9;
+      }
+
+      f.vel.lerp(desired, Math.min(1, dt * (seekPellet ? 3.4 : f.startleT > 0 ? 5 : 1.7)));
+      const maxSp = cruise * (f.startleT > 0 ? 3.4 : spdMul * 1.4);
       if (f.vel.length() > maxSp) f.vel.setLength(maxSp);
       f.pos.addScaledVector(f.vel, dt);
-      // soft clamp
       f.pos.x = Math.max(-bx, Math.min(bx, f.pos.x));
       f.pos.y = Math.max(yBand[0] - 0.3, Math.min(yBand[1] + 0.3, f.pos.y));
       f.pos.z = Math.max(-bz, Math.min(bz, f.pos.z));
 
-      // orientation
+      // ── orientation ──
       const horiz = Math.hypot(f.vel.x, f.vel.z);
+      const speed = f.vel.length();
       if (horiz > 0.03) {
         const tyaw = Math.atan2(-f.vel.z, f.vel.x);
         let dy = tyaw - f.yaw;
         while (dy > Math.PI) dy -= Math.PI * 2;
         while (dy < -Math.PI) dy += Math.PI * 2;
         f.yaw += dy * Math.min(1, dt * 3.2);
+      } else if (f.mode === 2) {
+        f.wanderYaw += (Math.random() - 0.5) * dt * (0.7 + P.dart);
+        f.yaw += f.wanderYaw * dt * 0.45;
       }
-      const pitch = Math.max(-0.5, Math.min(0.5, -Math.atan2(f.vel.y, Math.max(0.1, horiz)) * 0.55));
+      const grazePitch = f.mode === 1 ? -0.5 : 0;
+      const pitch = Math.max(-0.55, Math.min(0.55, grazePitch - Math.atan2(f.vel.y, Math.max(0.1, horiz)) * 0.55));
       const g = f.rig.group;
-      g.position.copy(f.pos);
+      const bob = f.mode === 2 ? Math.sin(this.t * 2.2 + f.bobPh) * 0.09 : speed < 0.4 ? Math.sin(this.t * 1.6 + f.bobPh) * 0.05 : 0;
+      g.position.set(f.pos.x, f.pos.y + bob, f.pos.z);
       g.rotation.y = f.yaw;
       g.rotation.x += (pitch - g.rotation.x) * Math.min(1, dt * 4);
-      g.rotation.z = Math.max(-0.4, Math.min(0.4, -((f.target.x - f.pos.x) * 0.0 + (f.vel.z * Math.cos(f.yaw) + f.vel.x * Math.sin(f.yaw)) * 0.25)));
+      const lateral = f.vel.z * Math.cos(f.yaw) + f.vel.x * Math.sin(f.yaw);
+      const idleRoll = f.mode === 2 ? Math.sin(this.t * 1.3 + f.bobPh) * 0.06 : 0;
+      g.rotation.z = Math.max(-0.45, Math.min(0.45, -lateral * 0.28 + idleRoll));
 
-      // animation + eating
-      const sp01 = Math.min(1, f.vel.length() / 2.2);
-      f.phase += dt * (4.5 + sp01 * 7.5);
-      f.rig.update(f.phase, sp01);
+      // ── animation: tail beat tied to species + speed, ambush sculling, idle fin-flicks ──
+      const sp01 = Math.min(1, speed / 2.2);
+      const tailBase = f.def.ai === "ambush" && f.dashT <= 0
+        ? P.tailBase
+        : P.tailBase * (0.35 + 0.65 * Math.min(1, speed / 1.2));
+      f.phase += dt * (tailBase + sp01 * 7.5);
+      f.flickCool -= dt;
+      if (f.flickCool <= 0 && speed < 0.5) { f.flickT = 0.35; f.flickCool = 2 + Math.random() * 4; }
+      let animSp = sp01;
+      if (f.flickT > 0) { f.flickT -= dt; animSp = Math.max(animSp, 0.7); }
+      f.rig.update(f.phase, animSp);
 
+      // ── eating ──
       const eatR = 0.22 + L * 0.28;
       if (this.pellets.length) {
         for (let pi = this.pellets.length - 1; pi >= 0; pi--) {
@@ -1024,3 +1128,16 @@ export class Engine {
 }
 
 function t0(x: number) { return x * 1.3; }
+
+// per-species movement personality
+function persp(def: SpeciesDef) {
+  const id = def.id, ai = def.ai;
+  return {
+    dart: id === "roach" ? 0.9 : id === "perch" ? 0.7 : id === "trout" ? 0.5 : id === "crucian" ? 0.3
+      : id === "salmon" ? 0.45 : id === "bass" ? 0.35 : id === "catfish" ? 0.25 : 0.2,
+    hover: ai === "ambush" ? 0.85 : id === "crucian" ? 0.4 : 0.15,
+    graze: ai === "bottom" ? 0.8 : id === "crucian" ? 0.5 : id === "roach" ? 0.25 : 0.1,
+    drive: id === "trout" || id === "salmon" ? 1 : ai === "school" ? 0.7 : id === "pike" ? 0.6 : 0.6,
+    tailBase: id === "trout" || id === "salmon" ? 6.5 : ai === "ambush" ? 3.2 : 4.5,
+  };
+}
