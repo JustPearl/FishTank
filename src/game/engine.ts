@@ -8,6 +8,7 @@ export interface SimBridge {
   onPelletEaten: (fishId: string) => void;
   onPelletDecayed: () => void;
   onFishGone: (fishId: string) => void;
+  onPredation: (predatorId: string, preyId: string) => void;
 }
 
 const TANK = { hx: 8.35, y0: 0.62, y1: 5.95, hz: 2.25 };
@@ -45,11 +46,15 @@ interface FishV {
   startleT: number; startleDir: THREE.Vector3;
   sandCool: number;
   wanderYaw: number;
+  chaseT: number; chaseCool: number; chaseId: string;
   glideT: number;   // burst-and-coast glide timer
   yawRate: number;  // rad/s, drives banking
 }
 interface Pellet { mesh: THREE.Mesh; vel: THREE.Vector3; settled: boolean; life: number; wob: number; }
 interface LeafSway { piv: THREE.Object3D; base: number; ph: number; sp: number; }
+interface FoodSignal { x: number; y: number; z: number; ttl: number; }
+/** Ostariophysi — roach, crucian & catfish react to alarm substance (Schreckstoff); perch/pike/trout don't */
+const CYP = new Set(["roach", "crucian", "catfish"]);
 
 export class Engine {
   private renderer!: THREE.WebGLRenderer;
@@ -96,7 +101,8 @@ export class Engine {
   private beamMats: THREE.ShaderMaterial[] = [];
   private stripMats: THREE.MeshStandardMaterial[] = [];
   private beamLight: THREE.PointLight | null = null;
-  private disturbances: { x: number; y: number; z: number; age: number }[] = [];
+  private disturbances: { x: number; y: number; z: number; age: number; chem: boolean }[] = [];
+  private foodSignals: FoodSignal[] = [];
 
   onFrame: ((dt: number) => void) | null = null;
   onWaterClick: ((x: number, y: number) => void) | null = null;
@@ -152,7 +158,7 @@ export class Engine {
   setDaylight(d: number) { this.daylight = d; }
   setOxygen(o: number) { this.oxygen = o; }
   shake(amp: number) { this.shakeT = 1; this.shakeAmp = Math.max(this.shakeAmp, amp); }
-  disturb(x: number, y: number, z: number) { this.disturbances.push({ x, y, z, age: 0 }); }
+  disturb(x: number, y: number, z: number, chem = false) { this.disturbances.push({ x, y, z, age: 0, chem }); }
 
   clearDynamic() {
     for (const f of this.fishes) this.scene.remove(f.rig.group);
@@ -663,6 +669,7 @@ export class Engine {
       flickCool: 1 + Math.random() * 3, flickT: 0,
       startleT: 0, startleDir: new THREE.Vector3(), sandCool: 1, wanderYaw: 0,
       glideT: 0, yawRate: 0,
+      chaseT: 0, chaseCool: 2 + Math.random() * 4, chaseId: "",
     };
     this.fishes.push(fv);
     rig.group.scale.setScalar(scale);
@@ -676,7 +683,21 @@ export class Engine {
 
   markDead(id: string) {
     const f = this.fishes.find((x) => x.id === id);
-    if (f && f.floatT === 0) { f.rig.setDead(); f.floatT = 0.001; this.disturb(f.pos.x, f.pos.y, f.pos.z); }
+    if (f && f.floatT === 0) { f.rig.setDead(); f.floatT = 0.001; this.disturb(f.pos.x, f.pos.y, f.pos.z, true); }
+  }
+
+  /** prey removed instantly (eaten) — burst, visual disturbance, no corpse */
+  eatFish(id: string) {
+    const i = this.fishes.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    const f = this.fishes[i];
+    this.spawnBurst(f.pos, 12);
+    this.disturb(f.pos.x, f.pos.y, f.pos.z, false);
+    this.scene.remove(f.rig.group);
+    this.fishes.splice(i, 1);
+    this.scaleTarget.delete(id);
+    this.spawnAnim.delete(id);
+    if (this.focusId === id) { this.focusId = null; this.onFocusLost?.(); }
   }
 
   dropPellets(n: number, atX?: number, atY?: number) {
@@ -822,6 +843,10 @@ export class Engine {
       this.disturbances[di].age += dt;
       if (this.disturbances[di].age > 1.1) this.disturbances.splice(di, 1);
     }
+    for (let si = this.foodSignals.length - 1; si >= 0; si--) {
+      this.foodSignals[si].ttl -= dt;
+      if (this.foodSignals[si].ttl <= 0) this.foodSignals.splice(si, 1);
+    }
     for (let i = this.fishes.length - 1; i >= 0; i--) {
       const f = this.fishes[i];
       const sim = this.bridge?.getFish(f.id);
@@ -864,26 +889,65 @@ export class Engine {
       const yBand: [number, number] = f.def.ai === "bottom" ? [0.9, 2.1] : f.def.ai === "ambush" ? [2.3, 5.2] : [1.2, 5.4];
       const bx = TANK.hx - L * 0.6, bz = TANK.hz - L * 0.2;
 
-      // ── startle: small fish bolt away from a recent disturbance ──
-      if (f.startleT <= 0 && f.def.ai !== "ambush") {
+      // ── chase timers ──
+      f.chaseCool -= dt;
+      f.chaseT = Math.max(0, f.chaseT - dt);
+      const inChase = f.chaseT > 0;
+      const isPred = f.def.ai === "ambush";
+
+      // ── startle: cyprinids panic widest at alarm substance from a dying cyprinid ──
+      if (f.startleT <= 0 && !isPred) {
+        const isCyp = CYP.has(f.def.id);
         for (const d of this.disturbances) {
           const dx = f.pos.x - d.x, dy = f.pos.y - d.y, dz = f.pos.z - d.z;
           const rr = dx * dx + dy * dy + dz * dz;
-          if (rr < 10) {
+          const rad = d.chem ? (isCyp ? 12 : 7) : 5;
+          if (rr < rad * rad) {
             const inv = 1 / Math.max(0.4, Math.sqrt(rr));
             f.startleDir.set(dx * inv, dy * inv * 0.35, dz * inv);
-            f.startleT = 0.5 + Math.random() * 0.35;
+            f.startleT = (d.chem && isCyp ? 0.85 : 0.5) + Math.random() * 0.35;
             break;
           }
         }
       }
 
-      // ── pick a behaviour mode ──
+      // ── neighbour awareness: fear, dominance, schooling, rivalry, hunting ──
+      let sepX = 0, sepY = 0, sepZ = 0, aliX = 0, aliY = 0, aliZ = 0, mates = 0;
+      let domX = 0, domZ = 0, fleeX = 0, fleeY = 0, fleeZ = 0, predNear = false;
+      let huntPrey: FishV | null = null, huntD2 = 49;
+      let rival: FishV | null = null, rivalD2 = 2.4;
+      for (const o of this.fishes) {
+        if (o === f || o.floatT > 0) continue;
+        const dx = f.pos.x - o.pos.x, dy = f.pos.y - o.pos.y, dz = f.pos.z - o.pos.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > 49) continue;
+        const oL = o.def.L * (this.scaleTarget.get(o.id) ?? 1);
+        if (d2 < 0.55) { const inv = 1 / Math.max(0.12, d2); sepX += dx * inv; sepY += dy * inv; sepZ += dz * inv; }
+        if (oL > L * 1.5 && d2 < 7) {
+          const inv = 1 / Math.max(0.6, d2);
+          if (o.def.ai === "ambush") { predNear = true; fleeX += dx * inv * 1.4; fleeY += dy * inv * 0.5; fleeZ += dz * inv * 1.4; }
+          else { domX += dx * inv; domZ += dz * inv; }
+        }
+        if (isSchool && o.def.id === f.def.id && d2 < 5) { mates++; aliX += o.vel.x; aliY += o.vel.y; aliZ += o.vel.z; }
+        if (isPred && hunger > 45 && o.def.ai !== "ambush" && oL < L * 0.5 && d2 < huntD2) { huntPrey = o; huntD2 = d2; }
+        if ((f.def.id === "bass" || f.def.id === "perch") && o.def.id === f.def.id && d2 < rivalD2) { rival = o; rivalD2 = d2; }
+      }
+      // territorial: bass & perch drive off intruding conspecifics
+      if (rival && f.chaseCool <= 0 && !inChase && f.dashT <= 0 && f.startleT <= 0) {
+        f.chaseT = 0.8; f.chaseCool = 7 + Math.random() * 6; f.chaseId = rival.id;
+        const rl = Math.max(0.3, rival.pos.distanceTo(f.pos));
+        rival.startleT = Math.max(rival.startleT, 0.4);
+        rival.startleDir.set((rival.pos.x - f.pos.x) / rl, (rival.pos.y - f.pos.y) / rl * 0.3, (rival.pos.z - f.pos.z) / rl);
+      }
+
+      // ── pick a behaviour mode (catfish graze far more at night) ──
       f.modeT -= dt;
-      if (f.modeT <= 0 && f.startleT <= 0 && !f.dashT) {
+      if (f.modeT <= 0 && f.startleT <= 0 && !f.dashT && !inChase) {
         const r = Math.random();
-        if (r < P.graze && f.def.ai !== "ambush") { f.mode = 1; f.modeT = 2.4 + Math.random() * 2.6; }
-        else if (r < P.graze + P.hover) { f.mode = 2; f.modeT = 1.1 + Math.random() * 1.9; }
+        const night = 1 - this.daylight;
+        const gw = P.graze * (f.def.ai === "bottom" ? 1 + night * 0.9 : 1);
+        if (r < gw && f.def.ai !== "ambush") { f.mode = 1; f.modeT = 2.4 + Math.random() * 2.6; }
+        else if (r < gw + P.hover) { f.mode = 2; f.modeT = 1.1 + Math.random() * 1.9; }
         else { f.mode = 0; f.modeT = 2 + Math.random() * 3; }
       }
 
@@ -920,48 +984,42 @@ export class Engine {
         if (isSchool) {
           let cx = 0, cy = 0, cz = 0, n = 0;
           for (const o of this.fishes) if (o !== f && o.def.id === f.def.id && o.floatT === 0) { cx += o.pos.x; cy += o.pos.y; cz += o.pos.z; n++; }
-          if (n > 0) { tx = tx * 0.4 + (cx / n) * 0.6; ty = ty * 0.4 + (cy / n) * 0.6; }
+          if (n > 0) { const w = predNear ? 0.85 : 0.6; tx = tx * (1 - w) + (cx / n) * w; ty = ty * (1 - w) + (cy / n) * w; }
         }
         f.target.set(tx, ty, tz);
       }
 
-      // ── boids: separation + alignment for shoaling fish ──
-      let sepX = 0, sepY = 0, sepZ = 0, aliX = 0, aliY = 0, aliZ = 0, mates = 0;
-      if (isSchool) {
-        for (const o of this.fishes) {
-          if (o === f || o.def.id !== f.def.id || o.floatT > 0) continue;
-          const dx = f.pos.x - o.pos.x, dy = f.pos.y - o.pos.y, dz = f.pos.z - o.pos.z;
-          const d2 = dx * dx + dy * dy + dz * dz;
-          if (d2 < 4) {
-            mates++;
-            aliX += o.vel.x; aliY += o.vel.y; aliZ += o.vel.z;
-            if (d2 < 0.9) { const inv = 1 / Math.max(0.15, d2); sepX += dx * inv; sepY += dy * inv; sepZ += dz * inv; }
-          }
-        }
-      }
-
       // ── speed ──
       let spdMul = (1 + Math.max(0, hunger - 40) * 0.006) * P.drive;
-      if (f.mode === 2) spdMul *= 0.35;
+      if (f.mode === 2 && !inChase) spdMul *= 0.35;
       else if (f.mode === 1) spdMul *= 0.6;
       if (seekPellet) spdMul *= 1.35;
+      if (inChase) spdMul *= 1.5;
+      if (predNear && !isPred) spdMul *= 1.4; // sustained wariness near a predator
+      if (f.def.ai === "bottom") spdMul *= 0.62 + 0.55 * (1 - this.daylight); // catfish are nocturnal
 
       // burst-and-coast: beat, then glide on momentum with the tail held still
-      if (f.glideT <= 0 && f.mode === 0 && !seekPellet && f.startleT <= 0 && f.def.ai !== "ambush" && Math.random() < dt * P.coast) {
+      if (f.glideT <= 0 && f.mode === 0 && !seekPellet && f.startleT <= 0 && !isPred && Math.random() < dt * P.coast) {
         f.glideT = 0.6 + Math.random() * 0.8;
       }
       if (f.glideT > 0) { f.glideT -= dt; spdMul *= 0.08; }
 
-      // ambush: hold near-still, then explosive lunge
-      if (f.def.ai === "ambush") {
+      // ambush predator: lie in wait, then an explosive aimed lunge at eligible prey
+      if (isPred) {
         f.dashCool -= dt;
-        if (f.dashCool <= 0 && f.dashT <= 0) {
-          f.dashT = 0.5; f.dashCool = 5 + Math.random() * 6;
+        if (f.dashT > 0) { f.dashT -= dt; spdMul *= 3.6; }
+        else spdMul *= 0.3;
+        if (f.dashCool <= 0 && f.dashT <= 0 && hunger > 45 && huntPrey) {
+          f.dashT = 0.6; f.dashCool = 8 + Math.random() * 7; f.chaseId = huntPrey.id;
           this.emitBubble(f.pos.x, f.pos.y, f.pos.z, true);
           this.disturb(f.pos.x, f.pos.y, f.pos.z);
         }
-        if (f.dashT > 0) { f.dashT -= dt; spdMul *= 3.6; }
-        else spdMul *= 0.3;
+      }
+      // stay locked onto the chased rival / prey
+      if ((inChase || f.dashT > 0) && f.chaseId) {
+        const c = this.fishes.find((x) => x.id === f.chaseId && x.floatT === 0);
+        if (c) f.target.copy(c.pos);
+        else { f.chaseT = 0; f.dashT = Math.min(f.dashT, 0.1); f.chaseId = ""; }
       }
 
       const cruise = f.def.speed * (0.6 + size * 0.4);
@@ -970,14 +1028,32 @@ export class Engine {
       if (dist > 0.05) desired.normalize().multiplyScalar(cruise * spdMul);
       else desired.set(0, 0, 0);
 
+      // social forces: flee predators, yield to dominants, shoal, follow feeding cues
+      if (!isPred) {
+        desired.x += fleeX * 1.15 + domX * 0.55;
+        desired.z += fleeZ * 1.15 + domZ * 0.55;
+        desired.y += fleeY * 0.5;
+      }
+      if (isSchool && mates > 0 && !seekPellet && f.startleT <= 0) {
+        const aliW = predNear ? 0.8 : 0.5; // shoals tighten & align harder near a predator
+        desired.x += (aliX / mates - f.vel.x) * aliW + sepX * 0.9;
+        desired.z += (aliZ / mates - f.vel.z) * aliW + sepZ * 0.9;
+        desired.y += (aliY / mates - f.vel.y) * (aliW * 0.6) + sepY * 0.9;
+      } else if (!isPred) {
+        desired.x += sepX * 0.6; desired.z += sepZ * 0.6; desired.y += sepY * 0.6;
+      }
+      if (!seekPellet && !isPred && hunger > 32 && this.foodSignals.length) {
+        let bs: FoodSignal | null = null, bd = 36;
+        for (const sg of this.foodSignals) {
+          const d2 = (sg.x - f.pos.x) ** 2 + (sg.y - f.pos.y) ** 2 + (sg.z - f.pos.z) ** 2;
+          if (d2 < bd) { bd = d2; bs = sg; }
+        }
+        if (bs) { desired.x += (bs.x - f.pos.x) * 0.14; desired.y += (bs.y - f.pos.y) * 0.08; desired.z += (bs.z - f.pos.z) * 0.1; }
+      }
+
       if (f.startleT > 0) {
         f.startleT -= dt;
         desired.copy(f.startleDir).multiplyScalar(cruise * 3.1);
-      }
-      if (isSchool && !seekPellet && f.startleT <= 0 && mates > 0) {
-        desired.x += (aliX / mates - f.vel.x) * 0.5 + sepX * 0.9;
-        desired.z += (aliZ / mates - f.vel.z) * 0.5 + sepZ * 0.9;
-        desired.y += (aliY / mates - f.vel.y) * 0.3 + sepY * 0.9;
       }
 
       // steer clear of glass before touching it
@@ -1059,8 +1135,22 @@ export class Engine {
             this.scene.remove(p.mesh);
             this.pellets.splice(pi, 1);
             this.spawnBurst(p.mesh.position, 2);
+            this.foodSignals.push({ x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z, ttl: 4 });
+            if (this.foodSignals.length > 8) this.foodSignals.shift();
             this.bridge?.onPelletEaten(f.id);
             break;
+          }
+        }
+      }
+      // predation: swallow prey caught during the lunge
+      if (isPred && f.dashT > 0 && f.chaseId) {
+        const c = this.fishes.find((x) => x.id === f.chaseId);
+        if (c && c.floatT === 0) {
+          const cr = L * 0.2 + c.def.L * 0.3;
+          if (f.pos.distanceToSquared(c.pos) < cr * cr) {
+            this.eatFish(c.id);
+            this.bridge?.onPredation(f.id, c.id);
+            f.dashT = 0; f.chaseId = "";
           }
         }
       }

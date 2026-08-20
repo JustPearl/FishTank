@@ -5,6 +5,7 @@ import { SPECIES, UPGRADES, MILESTONES, FEED_BTN_COST, CLEAN_COST, fmt$, type Sp
 // identifying field-guide tags derived from anatomy
 function tagsFor(sp: SpeciesDef): string[] {
   const A = sp.anatomy, t: string[] = [];
+  if (sp.id === "pike" || sp.id === "bass") t.push("eats small fish");
   if (A.snout > 0.7) t.push("duck bill");
   if (A.pattern === "bars") t.push("saddle bars");
   if (A.dorsal.blotch) t.push("dorsal blotch");

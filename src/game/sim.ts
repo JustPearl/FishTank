@@ -70,6 +70,7 @@ export class Sim {
       },
       onPelletDecayed: () => { this.dirt = clamp(this.dirt + 0.7, 0, 100); },
       onFishGone: (id) => { this.fishes = this.fishes.filter((f) => f.id !== id); },
+      onPredation: (predId, preyId) => this.onPredation(predId, preyId),
     });
     engine.onWaterClick = (x, y) => { if (this.phase === "playing") this.feedAt(x, y); };
     engine.onFrame = (dt) => { if (this.phase === "playing") this.step(dt); };
@@ -163,6 +164,27 @@ export class Sim {
     this.engine.removeFish(fishId);
     sfx.coin();
     this.toast("money", `${def?.name ?? "Fish"} rehomed  +$${refund}`);
+  }
+
+  /** a predator caught a tankmate — prey is gone, predator is sated */
+  private onPredation(predId: string, preyId: string) {
+    if (this.phase !== "playing") return;
+    const idx = this.fishes.findIndex((f) => f.id === preyId);
+    if (idx < 0) return;
+    const prey = this.fishes[idx];
+    const pred = this.fishes.find((f) => f.id === predId);
+    const yd = SPECIES.find((s) => s.id === prey.speciesId);
+    const pd = pred ? SPECIES.find((s) => s.id === pred.speciesId) : undefined;
+    this.fishes.splice(idx, 1);
+    this.stats.deaths++;
+    this.rep = clamp(this.rep - 4, 0, 100);
+    if (pred) {
+      pred.hunger = Math.max(0, pred.hunger - 42);
+      pred.scale = Math.min(1, pred.scale + 0.03);
+    }
+    sfx.warn();
+    this.engine.shake(0.1);
+    this.toast("warn", `${pd?.name ?? "A predator"} swallowed your ${yd?.name ?? "fish"} — mind the size gap!`);
   }
 
   clean() {

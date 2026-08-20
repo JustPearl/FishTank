@@ -77,7 +77,7 @@ export function MenuScreen({ onStart }: { onStart: () => void }) {
         </div>
         <div className="flex items-center gap-3">
           <Btn onClick={onStart}>OPEN THE GALLERY</Btn>
-          <span className="text-[10.5px] text-dim leading-snug">starting fund $120<br />don't go bankrupt</span>
+          <span className="text-[10.5px] text-dim leading-snug">starting fund $120 · don't go bankrupt<br />pike &amp; bass hunt tankmates under half their length</span>
         </div>
       </Placard>
     </div>
@@ -94,7 +94,7 @@ export function PauseScreen({ onResume, onRestart }: { onResume: () => void; onR
           <Btn onClick={onResume}>RESUME</Btn>
           <Btn onClick={onRestart} kind="ghost">RESTART</Btn>
         </div>
-        <div className="text-[10.5px] text-dim mt-4">F feed · C clean · click fish to inspect · drag/WASD move cam · scroll zoom · M mute</div>
+        <div className="text-[10.5px] text-dim mt-4">F feed · C clean · click fish to inspect · drag/WASD move cam · scroll zoom · M mute<br /><span className="text-amber2/80">Piscivores hunt fish under half their length — roach shoals tighten when pike are near</span></div>
       </Placard>
     </div>
   );
