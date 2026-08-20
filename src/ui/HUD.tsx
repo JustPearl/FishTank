@@ -417,7 +417,7 @@ function InspectPanel({ rec, focused, onFocus, onFeed, onSell, onClose }: {
   const def = SPECIES.find((s) => s.id === rec.speciesId);
   if (!def) return null;
   const sell = Math.round(def.cost * 0.5 * (0.5 + 0.5 * rec.scale));
-  const len = Math.round(def.L * rec.scale * 28);
+  const len = Math.round(def.L * rec.scale * 44);
   const sat = Math.round(100 - rec.hunger);
   return (
     <div className="absolute left-3 bottom-11 z-30 w-[266px] toast-in">

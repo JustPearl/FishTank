@@ -84,6 +84,9 @@ export class Engine {
   private bubbleAcc = 0;
   private oxygen = 90;
   private decorBubblers: THREE.Vector3[] = [];
+  private beamMats: THREE.ShaderMaterial[] = [];
+  private stripMats: THREE.MeshStandardMaterial[] = [];
+  private beamLight: THREE.PointLight | null = null;
 
   onFrame: ((dt: number) => void) | null = null;
   onWaterClick: ((x: number, y: number) => void) | null = null;
@@ -434,19 +437,52 @@ export class Engine {
         new THREE.MeshStandardMaterial({ color: "#eafff5", emissive: "#bff2dd", emissiveIntensity: 1.6, roughness: 0.4 }));
       strip.position.set(0, 6.6, 2.35);
       g.add(strip);
-      // layered volumetric beam into the water
-      const beam = (rt: number, rb: number, op: number) => {
-        const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, 6.5, 20, 1, true),
-          new THREE.MeshBasicMaterial({ color: "#d6f4e8", transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      this.stripMats.push(strip.material as THREE.MeshStandardMaterial);
+      // soft volumetric beam — view-angle edge falloff + vertical fade, no hard silhouette
+      const beamVert = `
+        varying vec3 vN; varying vec3 vW; varying vec2 vUv;
+        void main() {
+          vN = normalize(mat3(modelMatrix) * normal);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vW = wp.xyz; vUv = uv;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }`;
+      const beamFrag = `
+        varying vec3 vN; varying vec3 vW; varying vec2 vUv;
+        uniform float uOp; uniform vec3 uCol;
+        void main() {
+          vec3 V = normalize(cameraPosition - vW);
+          float edge = pow(abs(dot(normalize(vN), V)), 1.6);
+          float vfade = 0.22 + 0.78 * pow(1.0 - vUv.y, 1.3);
+          gl_FragColor = vec4(uCol, uOp * edge * vfade);
+        }`;
+      const beam = (rt: number, rb: number, sx: number, op: number) => {
+        const mat = new THREE.ShaderMaterial({
+          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+          uniforms: { uOp: { value: op }, uCol: { value: new THREE.Color("#d6f4e8") } },
+          vertexShader: beamVert, fragmentShader: beamFrag,
+        });
+        mat.userData.base = op;
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, 6.5, 24, 1, true), mat);
         m.position.set(0, 3.32, 1.7);
         m.rotation.x = 0.07;
+        m.scale.x = sx;
+        this.beamMats.push(mat);
         return m;
       };
-      g.add(beam(1.1, 4.4, 0.075));
-      g.add(beam(2.3, 6.8, 0.032));
-      const glow = new THREE.PointLight("#d8efe6", 0.8, 26);
+      g.add(beam(1.15, 4.4, 1.0, 0.17));
+      g.add(beam(1.15, 4.4, 1.7, 0.07));
+      g.add(beam(1.15, 4.4, 2.5, 0.032));
+      // soft glow pool where the light lands on the sand
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(5.0, 36),
+        new THREE.MeshBasicMaterial({ map: radialTex(), color: "#cdeee2", transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false }));
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.set(0, TANK.y0 + 0.04, 1.7);
+      g.add(pool);
+      const glow = new THREE.PointLight("#d8efe6", 0.95, 26);
       glow.position.set(0, 6.3, 1.8);
       g.add(glow);
+      this.beamLight = glow;
       this.scene.add(g); this.decors.push(g);
       return;
     }
@@ -563,7 +599,7 @@ export class Engine {
   private buildParticles() {
     const tex = radialTex();
     // bubbles
-    const N = 90;
+    const N = 240;
     const bPos = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
       this.bubbleData.push({ x: 0, y: -10, z: 0, sp: 0, ph: Math.random() * 9, act: false });
@@ -666,6 +702,12 @@ export class Engine {
     fog.color.copy(fogCol);
     this.renderer.setClearColor(new THREE.Color("#0e3d47").lerp(new THREE.Color("#123326"), murk * 0.7));
     this.shaftMats.forEach((m, i) => { m.opacity = (0.06 + 0.08 * Math.abs(Math.sin(t * 0.25 + i * 1.7))) * (0.45 + 0.55 * dl) * (1 - murk * 0.8); });
+    if (this.beamMats.length) {
+      const pulse = 0.9 + 0.08 * Math.sin(t * 2.1) + 0.025 * Math.sin(t * 13.7);
+      for (const m of this.beamMats) m.uniforms.uOp.value = (m.userData.base as number) * pulse;
+      for (const sm of this.stripMats) sm.emissiveIntensity = 1.6 * pulse;
+      if (this.beamLight) this.beamLight.intensity = 0.95 * pulse;
+    }
     for (const l of this.leafSwayers) l.piv.rotation.z = l.base + Math.sin(t * l.sp + l.ph) * 0.1;
     this.detMat.opacity = murk * 0.55;
     const dPos = this.detPts.geometry.attributes.position as THREE.BufferAttribute;
@@ -678,7 +720,7 @@ export class Engine {
     // bubbles
     this.bubbleAcc += dt * 7;
     while (this.bubbleAcc > 1) { this.bubbleAcc--; this.emitBubble(this.aeratorPos.x, this.aeratorPos.y, this.aeratorPos.z); }
-    for (const b of this.decorBubblers) if (Math.random() < dt * 9) this.emitBubble(b.x, b.y, b.z);
+    for (const b of this.decorBubblers) if (Math.random() < dt * 12) this.emitBubble(b.x, b.y, b.z, true);
     if (this.oxygen < 32) for (const f of this.fishes) if (Math.random() < dt * 2.2) this.emitBubble(f.pos.x, f.pos.y + 0.15, f.pos.z);
     const bPos = this.bubblePts.geometry.attributes.position as THREE.BufferAttribute;
     this.bubbleData.forEach((b, i) => {

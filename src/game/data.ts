@@ -52,8 +52,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "roach", name: "Common Roach", latin: "Rutilus rutilus",
     fact: "Silver shoaler with crimson eyes and rust-red paired fins.",
-    cost: 18, appeal: 1.6, load: 1, maxOf: 6, L: 0.85, HR: 0.34, WR: 0.4,
-    startScale: 0.62, growth: 0.00055, speed: 1.35, ai: "school",
+    cost: 18, appeal: 1.6, load: 1, maxOf: 6, L: 0.9, HR: 0.34, WR: 0.4,
+    startScale: 0.62, growth: 0.0006, speed: 1.35, ai: "school",
     anatomy: {
       back: "#3e4f3e", side: "#b9c2ba", belly: "#e8e8da",
       fin: "#8b918b", finPaired: "#c25e3e", eye: "#d8452b", eyeScale: 1.15,
@@ -66,8 +66,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "crucian", name: "Crucian Carp", latin: "Carassius carassius",
     fact: "Deep-backed bronze pond classic with visible scale rows.",
-    cost: 32, appeal: 2.2, load: 2, maxOf: 4, L: 1.2, HR: 0.46, WR: 0.42,
-    startScale: 0.55, growth: 0.00042, speed: 0.95, ai: "cruise",
+    cost: 32, appeal: 2.2, load: 2, maxOf: 4, L: 0.7, HR: 0.5, WR: 0.44,
+    startScale: 0.6, growth: 0.00065, speed: 0.95, ai: "cruise",
     anatomy: {
       back: "#5a4a26", side: "#b08d4a", belly: "#e5d2a2",
       fin: "#967740", finPaired: "#a5803f", eye: "#c9a233", eyeScale: 1.0,
@@ -80,8 +80,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "perch", name: "Yellow Perch", latin: "Perca flavescens",
     fact: "Brass flanks, dark saddle bars and a blotch on the spiny dorsal.",
-    cost: 46, appeal: 2.8, load: 1, maxOf: 6, L: 1.05, HR: 0.4, WR: 0.4,
-    startScale: 0.58, growth: 0.0005, speed: 1.2, ai: "school",
+    cost: 46, appeal: 2.8, load: 1, maxOf: 6, L: 0.75, HR: 0.42, WR: 0.4,
+    startScale: 0.6, growth: 0.00062, speed: 1.2, ai: "school",
     anatomy: {
       back: "#5c5f30", side: "#b3a458", belly: "#e6deb8",
       fin: "#cf6b33", finPaired: "#d1652e", eye: "#d9b44a", eyeScale: 1.0,
@@ -96,8 +96,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "trout", name: "Rainbow Trout", latin: "Oncorhynchus mykiss",
     fact: "Olive-silver with a rose-pink stripe and black spotting.",
-    cost: 68, appeal: 3.6, load: 2, maxOf: 4, L: 1.5, HR: 0.3, WR: 0.42,
-    startScale: 0.52, growth: 0.0004, speed: 1.5, ai: "cruise",
+    cost: 68, appeal: 3.6, load: 2, maxOf: 4, L: 1.7, HR: 0.29, WR: 0.42,
+    startScale: 0.5, growth: 0.00034, speed: 1.5, ai: "cruise",
     anatomy: {
       back: "#47503a", side: "#b3bcb2", belly: "#eae6d6",
       fin: "#6b7059", finPaired: "#7d8068", eye: "#d9a441", eyeScale: 1.0,
@@ -110,8 +110,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "bass", name: "Largemouth Bass", latin: "Micropterus salmoides",
     fact: "Stout olive ambush hunter — the jaw reaches past the eye.",
-    cost: 96, appeal: 4.4, load: 2, maxOf: 3, L: 1.6, HR: 0.34, WR: 0.44,
-    startScale: 0.5, growth: 0.00034, speed: 1.1, ai: "ambush",
+    cost: 96, appeal: 4.4, load: 2, maxOf: 3, L: 1.5, HR: 0.35, WR: 0.44,
+    startScale: 0.5, growth: 0.00032, speed: 1.1, ai: "ambush",
     anatomy: {
       back: "#425030", side: "#93a06b", belly: "#e0dbba",
       fin: "#5c6744", finPaired: "#66704c", eye: "#c9a63a", eyeScale: 1.0,
@@ -126,8 +126,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "catfish", name: "Channel Catfish", latin: "Ictalurus punctatus",
     fact: "Slate-blue, flat-skulled bottom dweller with a ribbon anal fin.",
-    cost: 130, appeal: 5, load: 3, maxOf: 2, L: 1.55, HR: 0.3, WR: 0.52,
-    startScale: 0.5, growth: 0.00032, speed: 0.85, ai: "bottom",
+    cost: 130, appeal: 5, load: 3, maxOf: 2, L: 1.9, HR: 0.27, WR: 0.52,
+    startScale: 0.48, growth: 0.00026, speed: 0.85, ai: "bottom",
     anatomy: {
       back: "#454f5c", side: "#84909a", belly: "#cfd4d6",
       fin: "#5f6973", finPaired: "#6b747c", eye: "#d8c15c", eyeScale: 0.55,
@@ -140,8 +140,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "pike", name: "Northern Pike", latin: "Esox lucius",
     fact: "The duck-billed ambush missile. One per tank, for everyone's sake.",
-    cost: 205, appeal: 7.5, load: 3, maxOf: 1, L: 2.35, HR: 0.23, WR: 0.4,
-    startScale: 0.5, growth: 0.0003, speed: 1.0, ai: "ambush",
+    cost: 205, appeal: 7.5, load: 3, maxOf: 1, L: 3.2, HR: 0.21, WR: 0.38,
+    startScale: 0.45, growth: 0.0002, speed: 1.0, ai: "ambush",
     anatomy: {
       back: "#4c5634", side: "#7d8852", belly: "#dad7b4",
       fin: "#767e4e", finPaired: "#7d8252", eye: "#c9a63a", eyeScale: 0.95,
@@ -154,8 +154,8 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: "salmon", name: "Atlantic Salmon", latin: "Salmo salar",
     fact: "Blue-steel flanks marked with scattered dark crosses.",
-    cost: 290, appeal: 9, load: 3, maxOf: 2, L: 2.05, HR: 0.27, WR: 0.42,
-    startScale: 0.48, growth: 0.00028, speed: 1.45, ai: "cruise", requiresCap: 24,
+    cost: 290, appeal: 9, load: 3, maxOf: 2, L: 2.2, HR: 0.26, WR: 0.42,
+    startScale: 0.46, growth: 0.00024, speed: 1.45, ai: "cruise", requiresCap: 24,
     anatomy: {
       back: "#3f4d58", side: "#aab8bd", belly: "#e6eae8",
       fin: "#6b7880", finPaired: "#77848a", eye: "#c9b23f", eyeScale: 1.0,
