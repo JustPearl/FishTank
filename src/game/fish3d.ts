@@ -23,7 +23,7 @@ const mix = (a: THREE.Color, b: THREE.Color, t: number) => a.clone().lerp(b, Mat
 export interface FishRig {
   group: THREE.Group;
   body: THREE.Mesh;
-  update: (phase: number, speed01: number) => void;
+  update: (phase: number, speed01: number, dt: number) => void;
   setDead: () => void;
   baseMat: THREE.MeshStandardMaterial;
 }
@@ -348,13 +348,17 @@ export function makeFish(def: SpeciesDef): FishRig {
   }
 
   let dead = false;
-  const update = (phase: number, speed01: number) => {
+  let pectPh = Math.random() * 6;
+  const update = (phase: number, speed01: number, dt: number) => {
     if (dead) return;
-    tailPivot.rotation.y = Math.sin(phase) * (0.32 + 0.42 * speed01);
-    body.rotation.y = Math.sin(phase) * 0.045;
-    body.rotation.z = Math.sin(phase * 0.5) * 0.02;
-    pectL.rotation.z = 0.7 + Math.sin(phase * 0.55 + 1) * 0.38;
-    pectR.rotation.z = 0.7 + Math.sin(phase * 0.55 + 2) * 0.38;
+    tailPivot.rotation.y = Math.sin(phase) * (0.1 + 0.6 * speed01);
+    body.rotation.y = Math.sin(phase) * (0.018 + 0.035 * speed01);
+    body.rotation.z = Math.sin(phase * 0.5) * 0.012;
+    // pectorals scull slowly when holding station, fold away when sprinting
+    pectPh += dt * (2.4 + (1 - speed01) * 2.8);
+    const pAmp = 0.5 - 0.32 * speed01;
+    pectL.rotation.z = 0.75 + Math.sin(pectPh + 1.1) * pAmp;
+    pectR.rotation.z = 0.75 + Math.sin(pectPh) * pAmp;
   };
 
   const setDead = () => {
