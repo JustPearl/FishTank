@@ -1,5 +1,33 @@
 // ── Greyline Aquarium: game data ──────────────────────────────────────────────
 
+export interface FinDef { f: number; b: number; h: number; spiky?: boolean; blotch?: boolean; }
+
+export interface Anatomy {
+  back: string; side: string; belly: string;
+  fin: string;        // unpaired fins (dorsal/anal/caudal)
+  finPaired: string;  // paired fins (pectoral/pelvic)
+  eye: string;
+  eyeScale: number;
+  pattern: "plain" | "bars" | "spots" | "toothbar" | "pikespots" | "mottle" | "lattice" | "xspots";
+  bars?: number;      // perch-like vertical saddle bars
+  pinkBand?: boolean; // rainbow trout's rose lateral stripe
+  snout: number;      // 0 blunt .. 1 pike duckbill
+  snoutFlat: number;  // vertical flattening of the snout
+  hump: number;       // dorsal arch (bream/crucian deep bodies)
+  headWide: number;   // catfish broad flat head
+  taperStart: number; taperEnd: number; taperAmt: number; // caudal taper
+  dorsal: FinDef;
+  dorsal2?: FinDef;   // soft second dorsal (perch/bass)
+  anal: FinDef;
+  adipose: boolean;
+  barbels: 0 | "catfish";
+  jawBig?: boolean;   // largemouth gape + maxilla
+  mouthVentral: number;
+  tailFork: number;   // 0 rounded .. 1 deeply forked
+  tailSize: number;
+  roughness: number;  // scaleless slime vs ctenoid scales
+}
+
 export interface SpeciesDef {
   id: string;
   name: string;
@@ -17,73 +45,125 @@ export interface SpeciesDef {
   speed: number;       // cruise speed units/s
   ai: "school" | "bottom" | "ambush" | "cruise";
   requiresCap?: number; // requires this bioload capacity
-  anatomy: {
-    back: string; side: string; belly: string; fin: string; stripe?: string;
-    pattern: "plain" | "bars" | "blotch" | "speckle" | "pikespots" | "mottle" | "xspots";
-    adipose?: boolean;   // adipose fin (trout/salmon/catfish)
-    twoDorsal?: boolean; // perch-like spiny + soft dorsal
-    barbels?: boolean;   // catfish whiskers
-    elongate?: boolean;  // pike body
-    tailFork: number;    // 0 rounded .. 1 deeply forked
-  };
+  anatomy: Anatomy;
 }
 
 export const SPECIES: SpeciesDef[] = [
   {
     id: "roach", name: "Common Roach", latin: "Rutilus rutilus",
-    fact: "A shoaling silver rough-fish with rust-red fins.",
+    fact: "Silver shoaler with crimson eyes and rust-red paired fins.",
     cost: 18, appeal: 1.6, load: 1, maxOf: 6, L: 0.85, HR: 0.34, WR: 0.4,
     startScale: 0.62, growth: 0.00055, speed: 1.35, ai: "school",
-    anatomy: { back: "#3c4a39", side: "#9aa7a0", belly: "#dcd9c8", fin: "#b0563a", pattern: "plain", tailFork: 0.55 },
+    anatomy: {
+      back: "#3e4f3e", side: "#b9c2ba", belly: "#e8e8da",
+      fin: "#8b918b", finPaired: "#c25e3e", eye: "#d8452b", eyeScale: 1.15,
+      pattern: "plain", snout: 0.08, snoutFlat: 0.08, hump: 0.24, headWide: 1.0,
+      taperStart: 0.55, taperEnd: 0.97, taperAmt: 0.72,
+      dorsal: { f: 0.1, b: 0.16, h: 0.3 }, anal: { f: 0.14, b: 0.3, h: 0.2 },
+      adipose: false, barbels: 0, mouthVentral: 0.12, tailFork: 0.6, tailSize: 1.0, roughness: 0.42,
+    },
   },
   {
     id: "crucian", name: "Crucian Carp", latin: "Carassius carassius",
-    fact: "Deep-bodied and bronze, a pond classic.",
+    fact: "Deep-backed bronze pond classic with visible scale rows.",
     cost: 32, appeal: 2.2, load: 2, maxOf: 4, L: 1.2, HR: 0.46, WR: 0.42,
     startScale: 0.55, growth: 0.00042, speed: 0.95, ai: "cruise",
-    anatomy: { back: "#5c4a28", side: "#9c7c44", belly: "#d9c494", fin: "#8a6a3c", pattern: "plain", tailFork: 0.6 },
+    anatomy: {
+      back: "#5a4a26", side: "#b08d4a", belly: "#e5d2a2",
+      fin: "#967740", finPaired: "#a5803f", eye: "#c9a233", eyeScale: 1.0,
+      pattern: "lattice", snout: 0.06, snoutFlat: 0.1, hump: 0.5, headWide: 1.0,
+      taperStart: 0.5, taperEnd: 0.95, taperAmt: 0.78,
+      dorsal: { f: 0.0, b: 0.26, h: 0.38 }, anal: { f: 0.08, b: 0.3, h: 0.26 },
+      adipose: false, barbels: 0, mouthVentral: 0.2, tailFork: 0.55, tailSize: 0.95, roughness: 0.45,
+    },
   },
   {
     id: "perch", name: "Yellow Perch", latin: "Perca flavescens",
-    fact: "Olive-gold flanks crossed by dark saddle bars.",
+    fact: "Brass flanks, dark saddle bars and a blotch on the spiny dorsal.",
     cost: 46, appeal: 2.8, load: 1, maxOf: 6, L: 1.05, HR: 0.4, WR: 0.4,
     startScale: 0.58, growth: 0.0005, speed: 1.2, ai: "school",
-    anatomy: { back: "#5f6234", side: "#a89a55", belly: "#e0d9b8", fin: "#7d7440", pattern: "bars", twoDorsal: true, tailFork: 0.45 },
+    anatomy: {
+      back: "#5c5f30", side: "#b3a458", belly: "#e6deb8",
+      fin: "#cf6b33", finPaired: "#d1652e", eye: "#d9b44a", eyeScale: 1.0,
+      pattern: "bars", bars: 7, snout: 0.14, snoutFlat: 0.12, hump: 0.3, headWide: 1.0,
+      taperStart: 0.55, taperEnd: 0.96, taperAmt: 0.72,
+      dorsal: { f: 0.05, b: 0.1, h: 0.42, spiky: true, blotch: true },
+      dorsal2: { f: -0.12, b: 0.28, h: 0.26 },
+      anal: { f: 0.12, b: 0.26, h: 0.2 },
+      adipose: false, barbels: 0, mouthVentral: 0.15, tailFork: 0.45, tailSize: 0.95, roughness: 0.55,
+    },
   },
   {
     id: "trout", name: "Rainbow Trout", latin: "Oncorhynchus mykiss",
-    fact: "Speckled olive silver with a rose-pink band.",
+    fact: "Olive-silver with a rose-pink stripe and black spotting.",
     cost: 68, appeal: 3.6, load: 2, maxOf: 4, L: 1.5, HR: 0.3, WR: 0.42,
     startScale: 0.52, growth: 0.0004, speed: 1.5, ai: "cruise",
-    anatomy: { back: "#47503a", side: "#a7b0a8", belly: "#dad7c6", fin: "#6b7059", stripe: "#c9848a", pattern: "speckle", adipose: true, tailFork: 0.7 },
+    anatomy: {
+      back: "#47503a", side: "#b3bcb2", belly: "#eae6d6",
+      fin: "#6b7059", finPaired: "#7d8068", eye: "#d9a441", eyeScale: 1.0,
+      pattern: "spots", pinkBand: true, snout: 0.18, snoutFlat: 0.2, hump: 0.22, headWide: 1.0,
+      taperStart: 0.55, taperEnd: 0.97, taperAmt: 0.72,
+      dorsal: { f: 0.06, b: 0.16, h: 0.3 }, anal: { f: 0.12, b: 0.26, h: 0.2 },
+      adipose: true, barbels: 0, mouthVentral: 0.1, tailFork: 0.7, tailSize: 1.05, roughness: 0.4,
+    },
   },
   {
     id: "bass", name: "Largemouth Bass", latin: "Micropterus salmoides",
-    fact: "A stout olive predator with a jagged side blotch.",
+    fact: "Stout olive ambush hunter — the jaw reaches past the eye.",
     cost: 96, appeal: 4.4, load: 2, maxOf: 3, L: 1.6, HR: 0.34, WR: 0.44,
     startScale: 0.5, growth: 0.00034, speed: 1.1, ai: "ambush",
-    anatomy: { back: "#424d33", side: "#8b9465", belly: "#d8d4b8", fin: "#5a6244", pattern: "blotch", tailFork: 0.5 },
+    anatomy: {
+      back: "#425030", side: "#93a06b", belly: "#e0dbba",
+      fin: "#5c6744", finPaired: "#66704c", eye: "#c9a63a", eyeScale: 1.0,
+      pattern: "toothbar", jawBig: true, snout: 0.28, snoutFlat: 0.25, hump: 0.26, headWide: 1.05,
+      taperStart: 0.52, taperEnd: 0.95, taperAmt: 0.72,
+      dorsal: { f: 0.1, b: 0.12, h: 0.4, spiky: true },
+      dorsal2: { f: -0.04, b: 0.22, h: 0.3 },
+      anal: { f: 0.1, b: 0.26, h: 0.22 },
+      adipose: false, barbels: 0, mouthVentral: 0.18, tailFork: 0.35, tailSize: 1.0, roughness: 0.5,
+    },
   },
   {
     id: "catfish", name: "Channel Catfish", latin: "Ictalurus punctatus",
-    fact: "Slate-blue bottom dweller with trailing barbels.",
+    fact: "Slate-blue, flat-skulled bottom dweller with a ribbon anal fin.",
     cost: 130, appeal: 5, load: 3, maxOf: 2, L: 1.55, HR: 0.3, WR: 0.52,
     startScale: 0.5, growth: 0.00032, speed: 0.85, ai: "bottom",
-    anatomy: { back: "#454f5c", side: "#7e8a94", belly: "#c8cdd0", fin: "#5a646e", pattern: "mottle", barbels: true, adipose: true, tailFork: 0.75 },
+    anatomy: {
+      back: "#454f5c", side: "#84909a", belly: "#cfd4d6",
+      fin: "#5f6973", finPaired: "#6b747c", eye: "#d8c15c", eyeScale: 0.55,
+      pattern: "mottle", snout: 0.15, snoutFlat: 0.3, hump: 0.12, headWide: 1.4,
+      taperStart: 0.6, taperEnd: 0.97, taperAmt: 0.7,
+      dorsal: { f: 0.14, b: 0.22, h: 0.16 }, anal: { f: 0.02, b: 0.4, h: 0.24 },
+      adipose: true, barbels: "catfish", mouthVentral: 0.5, tailFork: 0.7, tailSize: 0.9, roughness: 0.28,
+    },
   },
   {
     id: "pike", name: "Northern Pike", latin: "Esox lucius",
-    fact: "The freshwater ambush missile. One per tank.",
+    fact: "The duck-billed ambush missile. One per tank, for everyone's sake.",
     cost: 205, appeal: 7.5, load: 3, maxOf: 1, L: 2.35, HR: 0.23, WR: 0.4,
     startScale: 0.5, growth: 0.0003, speed: 1.0, ai: "ambush",
-    anatomy: { back: "#4c5634", side: "#77824c", belly: "#d3d0ae", fin: "#6c7444", pattern: "pikespots", elongate: true, tailFork: 0.6 },
+    anatomy: {
+      back: "#4c5634", side: "#7d8852", belly: "#dad7b4",
+      fin: "#767e4e", finPaired: "#7d8252", eye: "#c9a63a", eyeScale: 0.95,
+      pattern: "pikespots", snout: 1.0, snoutFlat: 0.8, hump: 0.06, headWide: 1.0,
+      taperStart: 0.62, taperEnd: 0.97, taperAmt: 0.66,
+      dorsal: { f: -0.06, b: 0.3, h: 0.28 }, anal: { f: 0.08, b: 0.34, h: 0.2 },
+      adipose: false, barbels: 0, mouthVentral: 0.05, tailFork: 0.6, tailSize: 1.0, roughness: 0.45,
+    },
   },
   {
     id: "salmon", name: "Atlantic Salmon", latin: "Salmo salar",
-    fact: "Blue-steel flanks, scattered dark crosses.",
+    fact: "Blue-steel flanks marked with scattered dark crosses.",
     cost: 290, appeal: 9, load: 3, maxOf: 2, L: 2.05, HR: 0.27, WR: 0.42,
     startScale: 0.48, growth: 0.00028, speed: 1.45, ai: "cruise", requiresCap: 24,
-    anatomy: { back: "#3f4d58", side: "#9fadb2", belly: "#dfe3e0", fin: "#67747c", pattern: "xspots", adipose: true, tailFork: 0.8 },
+    anatomy: {
+      back: "#3f4d58", side: "#aab8bd", belly: "#e6eae8",
+      fin: "#6b7880", finPaired: "#77848a", eye: "#c9b23f", eyeScale: 1.0,
+      pattern: "xspots", snout: 0.22, snoutFlat: 0.25, hump: 0.2, headWide: 1.0,
+      taperStart: 0.55, taperEnd: 0.97, taperAmt: 0.7,
+      dorsal: { f: 0.08, b: 0.16, h: 0.3 }, anal: { f: 0.1, b: 0.26, h: 0.22 },
+      adipose: true, barbels: 0, mouthVentral: 0.1, tailFork: 0.85, tailSize: 1.1, roughness: 0.35,
+    },
   },
 ];
 

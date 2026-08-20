@@ -1,6 +1,26 @@
 import type { ReactNode } from "react";
 import type { Snapshot, FishView } from "../game/sim";
-import { SPECIES, UPGRADES, MILESTONES, FEED_BTN_COST, CLEAN_COST, fmt$ } from "../game/data";
+import { SPECIES, UPGRADES, MILESTONES, FEED_BTN_COST, CLEAN_COST, fmt$, type SpeciesDef } from "../game/data";
+
+// identifying field-guide tags derived from anatomy
+function tagsFor(sp: SpeciesDef): string[] {
+  const A = sp.anatomy, t: string[] = [];
+  if (A.snout > 0.7) t.push("duck bill");
+  if (A.pattern === "bars") t.push("saddle bars");
+  if (A.dorsal.blotch) t.push("dorsal blotch");
+  if (A.pinkBand) t.push("rose stripe");
+  if (A.pattern === "toothbar") t.push("lateral band");
+  if (A.jawBig) t.push("big gape");
+  if (A.barbels) t.push("barbels");
+  if (A.pattern === "lattice") t.push("big scales");
+  if (A.pattern === "xspots") t.push("x-markings");
+  if (A.pattern === "spots") t.push("black spots");
+  if (A.pattern === "mottle") t.push("mottled");
+  if (A.adipose) t.push("adipose fin");
+  if (A.hump >= 0.45) t.push("deep body");
+  if (A.eye === "#d8452b") t.push("red eye");
+  return t.slice(0, 3);
+}
 
 // ── inline SVG icons ──────────────────────────────────────────────────────────
 export const I = {
@@ -153,6 +173,16 @@ export function Hud(p: HudProps) {
                     <span className="text-[12px] font-bold text-amber2 tabular-nums whitespace-nowrap">{fmt$(sp.cost)}</span>
                   </div>
                   <div className="text-[10px] italic text-[#5f8a8d] leading-tight">{sp.latin} — {sp.fact}</div>
+                  <div className="flex items-center gap-1 mt-1 flex-wrap">
+                    <span className="flex items-center -space-x-0.5 mr-1">
+                      {[sp.anatomy.back, sp.anatomy.side, sp.anatomy.finPaired].map((c, i) => (
+                        <span key={i} className="w-2.5 h-2.5 rounded-full border border-[#04161c]" style={{ background: c }} />
+                      ))}
+                    </span>
+                    {tagsFor(sp).map((t) => (
+                      <span key={t} className="text-[8px] tracking-wider uppercase px-1 py-px rounded-[2px] bg-cyan2/10 text-cyan2/80 border border-cyan2/20">{t}</span>
+                    ))}
+                  </div>
                   <div className="flex items-center justify-between mt-1.5">
                     <span className="flex items-center gap-1.5 text-[9.5px] text-dim">
                       <span className="flex gap-[1px]">{Array.from({ length: 3 }).map((_, i) => <span key={i} className={`w-1.5 h-1.5 rotate-45 ${i < Math.ceil(sp.appeal / 3) ? "bg-cyan2" : "bg-[#1d4550]"}`} />)}</span>
