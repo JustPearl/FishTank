@@ -377,48 +377,117 @@ export class Engine {
     if (kind === "rocks") { this.spawnRocks(0.5, 3); return; }
     if (kind === "plants") { this.spawnPlantClump(-2.8, -1.5, 10, 3.1); this.spawnPlantClump(3.2, 1.2, 7, 2.2); return; }
     if (kind === "aircurtain") {
-      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.6, 8),
-        new THREE.MeshStandardMaterial({ color: "#3a5a60", roughness: 0.5, metalness: 0.4 }));
+      const g = new THREE.Group();
+      const steel = new THREE.MeshStandardMaterial({ color: "#3f5d63", roughness: 0.4, metalness: 0.55 });
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.6, 10), steel);
       bar.rotation.x = Math.PI / 2;
-      bar.position.set(-3.4, TANK.y0 + 0.12, 0);
-      const g = new THREE.Group(); g.add(bar);
+      bar.position.set(-3.4, TANK.y0 + 0.14, 0);
+      bar.castShadow = true;
+      g.add(bar);
+      for (let i = 0; i < 5; i++) {
+        const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.05, 0.16, 8), steel);
+        noz.position.set(-3.4, TANK.y0 + 0.28, -1.4 + i * 0.7);
+        g.add(noz);
+      }
+      for (const fz of [-1.75, 1.75]) {
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.3), steel);
+        foot.position.set(-3.4, TANK.y0 + 0.05, fz);
+        g.add(foot);
+      }
+      // flexible airline up to the rim
+      const tubePts: THREE.Vector3[] = [];
+      for (let i = 0; i <= 10; i++) {
+        const tt = i / 10;
+        tubePts.push(new THREE.Vector3(
+          -3.4 + tt * 0.9,
+          TANK.y0 + 0.14 + tt * (6.9 - TANK.y0 - 0.14) + Math.sin(tt * Math.PI) * 0.35,
+          1.8 + tt * 0.55));
+      }
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(tubePts), 20, 0.025, 6),
+        new THREE.MeshStandardMaterial({ color: "#2c4248", roughness: 0.6 }));
+      g.add(tube);
       this.scene.add(g); this.decors.push(g);
-      for (let i = 0; i < 5; i++) this.decorBubblers.push(new THREE.Vector3(-3.4, TANK.y0 + 0.2, -1.4 + i * 0.7));
+      for (let i = 0; i < 5; i++) this.decorBubblers.push(new THREE.Vector3(-3.4, TANK.y0 + 0.36, -1.4 + i * 0.7));
       return;
     }
     if (kind === "lightbar") {
       const g = new THREE.Group();
-      const housing = new THREE.Mesh(new THREE.BoxGeometry(10, 0.22, 0.5),
-        new THREE.MeshStandardMaterial({ color: "#20343c", roughness: 0.4, metalness: 0.6 }));
-      housing.position.set(0, 6.75, 2.3);
+      const metal = new THREE.MeshStandardMaterial({ color: "#232f36", roughness: 0.35, metalness: 0.75 });
+      const alum = new THREE.MeshStandardMaterial({ color: "#4c5c62", roughness: 0.3, metalness: 0.8 });
+      // mounting straps down from the top frame
+      for (const sx of [-3.4, 3.4]) {
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.9, 0.3), metal);
+        strap.position.set(sx, 7.3, 2.35);
+        g.add(strap);
+      }
+      // housing with machined end caps
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(9.4, 0.3, 0.62), metal);
+      housing.position.set(0, 6.78, 2.35);
       g.add(housing);
-      const cone = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 5.4, 6.4, 20, 1, true),
-        new THREE.MeshBasicMaterial({ color: "#cfe9e2", transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      cone.position.set(0, 3.5, 1.2);
-      g.add(cone);
-      const glow = new THREE.PointLight("#d8efe6", 0.55, 22);
-      glow.position.set(0, 6.2, 1.6);
+      for (const sx of [-4.85, 4.85]) {
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.72), alum);
+        cap.position.set(sx, 6.78, 2.35);
+        g.add(cap);
+      }
+      // emissive diffuser strip
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(9.3, 0.07, 0.44),
+        new THREE.MeshStandardMaterial({ color: "#eafff5", emissive: "#bff2dd", emissiveIntensity: 1.6, roughness: 0.4 }));
+      strip.position.set(0, 6.6, 2.35);
+      g.add(strip);
+      // layered volumetric beam into the water
+      const beam = (rt: number, rb: number, op: number) => {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, 6.5, 20, 1, true),
+          new THREE.MeshBasicMaterial({ color: "#d6f4e8", transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+        m.position.set(0, 3.32, 1.7);
+        m.rotation.x = 0.07;
+        return m;
+      };
+      g.add(beam(1.1, 4.4, 0.075));
+      g.add(beam(2.3, 6.8, 0.032));
+      const glow = new THREE.PointLight("#d8efe6", 0.8, 26);
+      glow.position.set(0, 6.3, 1.8);
       g.add(glow);
       this.scene.add(g); this.decors.push(g);
       return;
     }
     if (kind === "rowboat") {
       const g = new THREE.Group();
-      const woodMat = new THREE.MeshStandardMaterial({ color: "#5a4630", roughness: 0.9 });
-      const hull = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.9, 1.5), woodMat);
-      hull.position.set(0, 0.45, 0);
+      const woodMat = new THREE.MeshStandardMaterial({ color: "#5a4630", roughness: 0.9, flatShading: true });
+      const rimMat = new THREE.MeshStandardMaterial({ color: "#75603f", roughness: 0.85 });
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.85, 1.5), woodMat);
+      hull.position.set(0, 0.42, 0);
       g.add(hull);
-      const rim = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.16, 1.6), new THREE.MeshStandardMaterial({ color: "#6d573c", roughness: 0.9 }));
-      rim.position.set(0, 0.95, 0);
+      // raked bow and stern
+      for (const sx of [-1, 1]) {
+        const end = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.72, 1.26), woodMat);
+        end.position.set(sx * 1.85, 0.52, 0);
+        end.rotation.z = sx * 0.5;
+        g.add(end);
+      }
+      const rim = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.14, 1.62), rimMat);
+      rim.position.set(0, 0.92, 0);
       g.add(rim);
-      for (const bx of [-1.2, 0, 1.2]) {
-        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 1.5), woodMat);
-        plank.position.set(bx, 1.0, 0);
+      // dark interior floor + thwarts
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.08, 1.3), new THREE.MeshStandardMaterial({ color: "#382c1d", roughness: 1 }));
+      floor.position.set(0, 0.8, 0);
+      g.add(floor);
+      for (const bx of [-1.05, 0.35, 1.3]) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.09, 1.5), rimMat);
+        plank.position.set(bx, 0.98, 0);
         g.add(plank);
       }
-      g.position.set(2.4, TANK.y0 - 0.15, -0.8);
-      g.rotation.set(0.08, 0.5, 0.14);
-      g.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
+      // oar resting across the gunwales
+      const oar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.6, 6), rimMat);
+      oar.position.set(-0.3, 1.06, 0);
+      oar.rotation.x = Math.PI / 2 - 0.2;
+      g.add(oar);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.03, 0.5), woodMat);
+      blade.position.set(-0.3, 1.2, 1.25);
+      blade.rotation.x = -0.2;
+      g.add(blade);
+      g.position.set(2.4, TANK.y0 - 0.18, -0.8);
+      g.rotation.set(0.1, 0.5, 0.16);
+      g.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
       this.scene.add(g); this.decors.push(g);
       return;
     }
@@ -437,20 +506,56 @@ export class Engine {
       this.scene.add(g); this.decors.push(g);
       return;
     }
-    // driftwood
+    // ── driftwood: rooted arch, bark-faceted segments, limbs, knots, moss ──
     const g = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: "#4d3a28", roughness: 0.95 });
-    const mk = (r: number, len: number, x: number, y: number, z: number, rz: number, ry: number) => {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.7, r, len, 8), mat);
-      m.position.set(x, y, z);
-      m.rotation.set(0, ry, rz);
+    const barkCols = ["#57422c", "#4a3826", "#5e4930", "#42321e"];
+    const barkMat = (i: number) => new THREE.MeshStandardMaterial({ color: barkCols[i % barkCols.length], roughness: 0.96, flatShading: true });
+    const upV = new THREE.Vector3(0, 1, 0);
+    const seg = (a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, mi: number) => {
+      const dir = b.clone().sub(a);
+      const len = dir.length();
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, len, 7), barkMat(mi));
+      m.position.copy(a).addScaledVector(dir, 0.5);
+      m.quaternion.setFromUnitVectors(upV, dir.clone().normalize());
       m.castShadow = true;
+      m.receiveShadow = true;
       g.add(m);
     };
-    mk(0.16, 2.6, -0.4, 1.5, -0.6, 0.9, 0.3);
-    mk(0.12, 1.9, 0.9, 1.1, -0.2, -1.1, -0.4);
-    mk(0.09, 1.2, 0.1, 2.3, -0.4, 0.2, 0.8);
-    g.position.set(0.6, 0, 0.3);
+    // main trunk: foot on the sand → tall arch → foot on the sand
+    const P = [
+      new THREE.Vector3(-2.1, 0.0, 0.1),
+      new THREE.Vector3(-1.2, 0.95, -0.15),
+      new THREE.Vector3(-0.15, 2.1, 0.05),
+      new THREE.Vector3(1.0, 1.55, 0.3),
+      new THREE.Vector3(1.95, 0.1, -0.1),
+    ];
+    for (let i = 0; i < P.length - 1; i++) seg(P[i], P[i + 1], 0.2 - i * 0.028, 0.2 - (i + 1) * 0.028, i);
+    // limbs forking off the arch
+    seg(P[1], new THREE.Vector3(-1.9, 2.05, -0.5), 0.09, 0.045, 1);
+    seg(new THREE.Vector3(-1.9, 2.05, -0.5), new THREE.Vector3(-2.2, 2.6, -0.35), 0.045, 0.02, 2);
+    seg(P[2], new THREE.Vector3(0.35, 2.9, -0.35), 0.08, 0.035, 3);
+    seg(P[3], new THREE.Vector3(1.55, 2.15, 0.75), 0.07, 0.03, 0);
+    // broken snag stubs
+    seg(new THREE.Vector3(-0.7, 1.6, -0.05), new THREE.Vector3(-0.95, 2.0, 0.35), 0.06, 0.05, 2);
+    seg(new THREE.Vector3(0.55, 1.82, 0.18), new THREE.Vector3(0.5, 2.1, 0.5), 0.05, 0.042, 1);
+    // knots at the joints
+    for (const k of [P[1], P[2], P[3]]) {
+      const knot = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 0), barkMat(2));
+      knot.position.copy(k);
+      knot.scale.set(1.25, 0.9, 1.1);
+      knot.rotation.set(Math.random(), Math.random() * 3, Math.random());
+      knot.castShadow = true;
+      g.add(knot);
+    }
+    // moss tufts gripping the bark
+    const mossMat = new THREE.MeshStandardMaterial({ color: "#41593b", roughness: 1, flatShading: true });
+    for (const mp of [new THREE.Vector3(-1.5, 1.4, -0.28), new THREE.Vector3(0.1, 2.2, 0.18), new THREE.Vector3(1.35, 1.75, 0.5)]) {
+      const moss = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 0), mossMat);
+      moss.position.copy(mp);
+      moss.scale.set(1.4, 0.7, 1.2);
+      g.add(moss);
+    }
+    g.position.set(0.4, TANK.y0 - 0.12, 0.1);
     this.scene.add(g);
     this.decors.push(g);
   }
