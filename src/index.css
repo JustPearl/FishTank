@@ -1,1 +1,49 @@
 @import "tailwindcss";
+
+@theme {
+  --font-disp: "Bricolage Grotesque", "Space Grotesk", sans-serif;
+  --font-body: "Space Grotesk", "Segoe UI", sans-serif;
+  --color-abyss: #04141a;
+  --color-panel: #062029;
+  --color-line: #16434f;
+  --color-cyan2: #5adecb;
+  --color-amber2: #f4b83f;
+  --color-coral2: #ff7b5c;
+  --color-ink2: #cfe6e2;
+  --color-dim: #6f9699;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: #04141a;
+  overscroll-behavior: none;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to { opacity: 1; transform: none; }
+}
+.toast-in { animation: toastIn 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.35) both; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-up { animation: fadeUp 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both; }
+
+@keyframes walkX {
+  from { left: -8%; }
+  to { left: 104%; }
+}
+.visitor-walk {
+  left: -8%;
+  animation-name: walkX;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.scroll-thin { scrollbar-width: thin; scrollbar-color: #16434f transparent; }
+.scroll-thin::-webkit-scrollbar { width: 6px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #16434f; border-radius: 3px; }
