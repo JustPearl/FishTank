@@ -45,6 +45,8 @@ interface FishV {
   startleT: number; startleDir: THREE.Vector3;
   sandCool: number;
   wanderYaw: number;
+  glideT: number;   // burst-and-coast glide timer
+  yawRate: number;  // rad/s, drives banking
 }
 interface Pellet { mesh: THREE.Mesh; vel: THREE.Vector3; settled: boolean; life: number; wob: number; }
 interface LeafSway { piv: THREE.Object3D; base: number; ph: number; sp: number; }
@@ -660,6 +662,7 @@ export class Engine {
       mode: 0, modeT: Math.random() * 2, bobPh: Math.random() * 9,
       flickCool: 1 + Math.random() * 3, flickT: 0,
       startleT: 0, startleDir: new THREE.Vector3(), sandCool: 1, wanderYaw: 0,
+      glideT: 0, yawRate: 0,
     };
     this.fishes.push(fv);
     rig.group.scale.setScalar(scale);
@@ -923,7 +926,7 @@ export class Engine {
       }
 
       // ── boids: separation + alignment for shoaling fish ──
-      let sepX = 0, sepY = 0, sepZ = 0, aliX = 0, aliZ = 0, mates = 0;
+      let sepX = 0, sepY = 0, sepZ = 0, aliX = 0, aliY = 0, aliZ = 0, mates = 0;
       if (isSchool) {
         for (const o of this.fishes) {
           if (o === f || o.def.id !== f.def.id || o.floatT > 0) continue;
@@ -931,7 +934,7 @@ export class Engine {
           const d2 = dx * dx + dy * dy + dz * dz;
           if (d2 < 4) {
             mates++;
-            aliX += o.vel.x; aliZ += o.vel.z;
+            aliX += o.vel.x; aliY += o.vel.y; aliZ += o.vel.z;
             if (d2 < 0.9) { const inv = 1 / Math.max(0.15, d2); sepX += dx * inv; sepY += dy * inv; sepZ += dz * inv; }
           }
         }
@@ -942,6 +945,12 @@ export class Engine {
       if (f.mode === 2) spdMul *= 0.35;
       else if (f.mode === 1) spdMul *= 0.6;
       if (seekPellet) spdMul *= 1.35;
+
+      // burst-and-coast: beat, then glide on momentum with the tail held still
+      if (f.glideT <= 0 && f.mode === 0 && !seekPellet && f.startleT <= 0 && f.def.ai !== "ambush" && Math.random() < dt * P.coast) {
+        f.glideT = 0.6 + Math.random() * 0.8;
+      }
+      if (f.glideT > 0) { f.glideT -= dt; spdMul *= 0.08; }
 
       // ambush: hold near-still, then explosive lunge
       if (f.def.ai === "ambush") {
@@ -968,40 +977,65 @@ export class Engine {
       if (isSchool && !seekPellet && f.startleT <= 0 && mates > 0) {
         desired.x += (aliX / mates - f.vel.x) * 0.5 + sepX * 0.9;
         desired.z += (aliZ / mates - f.vel.z) * 0.5 + sepZ * 0.9;
-        desired.y += sepY * 0.9;
+        desired.y += (aliY / mates - f.vel.y) * 0.3 + sepY * 0.9;
       }
+
+      // steer clear of glass before touching it
+      const pad = 1.25;
+      if (f.pos.x > bx - pad) desired.x -= (f.pos.x - (bx - pad)) * 1.6;
+      if (f.pos.x < -bx + pad) desired.x += (-bx + pad - f.pos.x) * 1.6;
+      if (f.pos.z > bz - pad) desired.z -= (f.pos.z - (bz - pad)) * 1.6;
+      if (f.pos.z < -bz + pad) desired.z += (-bz + pad - f.pos.z) * 1.6;
+      if (f.pos.y > yBand[1] + 0.1) desired.y -= (f.pos.y - yBand[1] - 0.1) * 1.4;
+      if (f.pos.y < yBand[0] - 0.1 && f.mode !== 1) desired.y += (yBand[0] - 0.1 - f.pos.y) * 1.4;
 
       f.vel.lerp(desired, Math.min(1, dt * (seekPellet ? 3.4 : f.startleT > 0 ? 5 : 1.7)));
       const maxSp = cruise * (f.startleT > 0 ? 3.4 : spdMul * 1.4);
       if (f.vel.length() > maxSp) f.vel.setLength(maxSp);
-      f.pos.addScaledVector(f.vel, dt);
-      f.pos.x = Math.max(-bx, Math.min(bx, f.pos.x));
-      f.pos.y = Math.max(yBand[0] - 0.3, Math.min(yBand[1] + 0.3, f.pos.y));
-      f.pos.z = Math.max(-bz, Math.min(bz, f.pos.z));
 
-      // ── orientation ──
+      // fish can't swim backwards — cancel any rearward component, keep lateral drift
+      const fwdX = Math.cos(f.yaw), fwdZ = -Math.sin(f.yaw);
+      const rear = f.vel.x * fwdX + f.vel.z * fwdZ;
+      if (rear < 0) { f.vel.x -= fwdX * rear * 0.92; f.vel.z -= fwdZ * rear * 0.92; }
+
+      f.pos.addScaledVector(f.vel, dt);
+      // contact with glass: bleed the pushing component instead of grinding against it
+      if (f.pos.x > bx) { f.pos.x = bx; if (f.vel.x > 0) f.vel.x *= 0.1; }
+      if (f.pos.x < -bx) { f.pos.x = -bx; if (f.vel.x < 0) f.vel.x *= 0.1; }
+      if (f.pos.z > bz) { f.pos.z = bz; if (f.vel.z > 0) f.vel.z *= 0.1; }
+      if (f.pos.z < -bz) { f.pos.z = -bz; if (f.vel.z < 0) f.vel.z *= 0.1; }
+      f.pos.y = Math.max(yBand[0] - 0.3, Math.min(yBand[1] + 0.3, f.pos.y));
+
+      // ── orientation (model: nose = +X, order YXZ → y=yaw, z=pitch, x=roll) ──
       const horiz = Math.hypot(f.vel.x, f.vel.z);
       const speed = f.vel.length();
-      if (horiz > 0.03) {
+      if (horiz > 0.06) {
         const tyaw = Math.atan2(-f.vel.z, f.vel.x);
         let dy = tyaw - f.yaw;
         while (dy > Math.PI) dy -= Math.PI * 2;
         while (dy < -Math.PI) dy += Math.PI * 2;
-        f.yaw += dy * Math.min(1, dt * 3.2);
-      } else if (f.mode === 2) {
-        f.wanderYaw += (Math.random() - 0.5) * dt * (0.7 + P.dart);
-        f.yaw += f.wanderYaw * dt * 0.45;
+        // bounded turn rate — sluggish when slow, explosive C-start when startled
+        const maxTurn = P.turn * (0.4 + 0.6 * Math.min(1, speed / cruise)) * (f.startleT > 0 ? 3.2 : 1);
+        const step = Math.max(-maxTurn * dt, Math.min(maxTurn * dt, dy));
+        f.yaw += step;
+        f.yawRate += (step / Math.max(dt, 1e-4) - f.yawRate) * Math.min(1, dt * 9);
+      } else {
+        // holding station: slow meander, no snapping
+        f.yawRate *= 1 - Math.min(1, dt * 4);
+        f.wanderYaw += (Math.random() - 0.5) * dt * (0.5 + P.dart * 0.6);
+        f.wanderYaw = Math.max(-0.55, Math.min(0.55, f.wanderYaw));
+        f.yaw += f.wanderYaw * dt * 0.35;
       }
-      const grazePitch = f.mode === 1 ? -0.5 : 0;
-      const pitch = Math.max(-0.55, Math.min(0.55, grazePitch - Math.atan2(f.vel.y, Math.max(0.1, horiz)) * 0.55));
       const g = f.rig.group;
-      const bob = f.mode === 2 ? Math.sin(this.t * 2.2 + f.bobPh) * 0.09 : speed < 0.4 ? Math.sin(this.t * 1.6 + f.bobPh) * 0.05 : 0;
-      g.position.set(f.pos.x, f.pos.y + bob, f.pos.z);
+      g.position.copy(f.pos);
       g.rotation.y = f.yaw;
-      g.rotation.x += (pitch - g.rotation.x) * Math.min(1, dt * 4);
-      const lateral = f.vel.z * Math.cos(f.yaw) + f.vel.x * Math.sin(f.yaw);
-      const idleRoll = f.mode === 2 ? Math.sin(this.t * 1.3 + f.bobPh) * 0.06 : 0;
-      g.rotation.z = Math.max(-0.45, Math.min(0.45, -lateral * 0.28 + idleRoll));
+      // pitch: nose follows the climb/dive, nose-down while grazing (rotation.z = lateral axis)
+      const grazePitch = f.mode === 1 ? -0.42 : 0;
+      const pitchT = Math.max(-0.5, Math.min(0.5, grazePitch + Math.atan2(f.vel.y, Math.max(0.12, horiz)) * 0.6));
+      g.rotation.z += (pitchT - g.rotation.z) * Math.min(1, dt * 4.5);
+      // roll: bank into turns around the spine, spring back to level — never a sine wave
+      const rollT = Math.max(-0.42, Math.min(0.42, -f.yawRate * 0.24));
+      g.rotation.x += (rollT - g.rotation.x) * Math.min(1, dt * 5);
 
       // ── animation: tail beat tied to species + speed, ambush sculling, idle fin-flicks ──
       const sp01 = Math.min(1, speed / 2.2);
@@ -1012,8 +1046,9 @@ export class Engine {
       f.flickCool -= dt;
       if (f.flickCool <= 0 && speed < 0.5) { f.flickT = 0.35; f.flickCool = 2 + Math.random() * 4; }
       let animSp = sp01;
+      if (f.glideT > 0) animSp *= 0.25; // coasting: tail amplitude collapses
       if (f.flickT > 0) { f.flickT -= dt; animSp = Math.max(animSp, 0.7); }
-      f.rig.update(f.phase, animSp);
+      f.rig.update(f.phase, animSp, dt);
 
       // ── eating ──
       const eatR = 0.22 + L * 0.28;
@@ -1139,5 +1174,11 @@ function persp(def: SpeciesDef) {
     graze: ai === "bottom" ? 0.8 : id === "crucian" ? 0.5 : id === "roach" ? 0.25 : 0.1,
     drive: id === "trout" || id === "salmon" ? 1 : ai === "school" ? 0.7 : id === "pike" ? 0.6 : 0.6,
     tailBase: id === "trout" || id === "salmon" ? 6.5 : ai === "ambush" ? 3.2 : 4.5,
+    // agility: max yaw rate rad/s — stiff-bodied pike/catfish carve wide, roach spin on a dime
+    turn: id === "roach" ? 2.9 : id === "perch" ? 2.5 : id === "trout" ? 2.2 : id === "salmon" ? 2.0
+      : id === "crucian" ? 2.0 : id === "bass" ? 1.7 : id === "pike" ? 1.8 : 1.25,
+    // burst-and-coast propensity (per second while cruising)
+    coast: id === "trout" ? 0.5 : id === "crucian" ? 0.45 : id === "pike" ? 0.38 : id === "salmon" ? 0.3
+      : id === "roach" ? 0.12 : id === "perch" ? 0.15 : 0.06,
   };
 }
