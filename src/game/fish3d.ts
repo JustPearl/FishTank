@@ -22,6 +22,7 @@ const mix = (a: THREE.Color, b: THREE.Color, t: number) => a.clone().lerp(b, Mat
 
 export interface FishRig {
   group: THREE.Group;
+  body: THREE.Mesh;
   update: (phase: number, speed01: number) => void;
   setDead: () => void;
   baseMat: THREE.MeshStandardMaterial;
@@ -262,5 +263,5 @@ export function makeFish(def: SpeciesDef): FishRig {
     tailPivot.rotation.y = 0.25;
   };
 
-  return { group, update, setDead, baseMat: bodyMat };
+  return { group, body, update, setDead, baseMat: bodyMat };
 }

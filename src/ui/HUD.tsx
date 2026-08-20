@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Snapshot } from "../game/sim";
+import type { Snapshot, FishView } from "../game/sim";
 import { SPECIES, UPGRADES, MILESTONES, FEED_BTN_COST, CLEAN_COST, fmt$ } from "../game/data";
 
 // ── inline SVG icons ──────────────────────────────────────────────────────────
@@ -75,6 +75,10 @@ export interface HudProps {
   onToggleShop: () => void; onToggleOps: () => void;
   onBuy: (id: string) => void; onUpgrade: (id: string) => void;
   onFeed: () => void; onClean: () => void; onPause: () => void; onMute: () => void;
+  inspectId: string | null; focusId: string | null; zoomPct: number;
+  onZoom: (d: number) => void;
+  onCloseInspect: () => void; onToggleFocus: (id: string) => void;
+  onFeedFish: (id: string) => void; onSellFish: (id: string) => void;
 }
 
 export function Hud(p: HudProps) {
@@ -260,11 +264,30 @@ export function Hud(p: HudProps) {
       <VisitorLayer n={s.phase === "playing" || s.phase === "paused" ? s.visitors : 0} />
 
       {/* hint bar */}
+      {(() => {
+        const rec = p.inspectId ? s.fish.find((f) => f.id === p.inspectId) : undefined;
+        if (!rec) return null;
+        return (
+          <InspectPanel
+            rec={rec}
+            focused={p.focusId === rec.id}
+            onFocus={() => p.onToggleFocus(rec.id)}
+            onFeed={() => p.onFeedFish(rec.id)}
+            onSell={() => p.onSellFish(rec.id)}
+            onClose={p.onCloseInspect}
+          />
+        );
+      })()}
+
+      <ZoomCluster pct={p.zoomPct} onZoom={p.onZoom} />
+
       <div className="absolute bottom-0 inset-x-0 z-10 h-9 flex items-center justify-center gap-4 bg-gradient-to-t from-[#02101499] to-transparent text-[10px] text-dim tracking-wide pointer-events-none select-none">
-        <span><b className="text-cyan2/80">CLICK WATER</b> drop feed $1</span>
-        <span><b className="text-cyan2/80">F</b> sprinkle $3</span>
-        <span><b className="text-cyan2/80">C</b> clean $12</span>
-        <span><b className="text-cyan2/80">SCROLL</b> zoom</span>
+        <span><b className="text-cyan2/80">CLICK FISH</b> inspect</span>
+        <span><b className="text-cyan2/80">CLICK WATER</b> feed $1</span>
+        <span><b className="text-cyan2/80">DRAG / WASD</b> move cam</span>
+        <span><b className="text-cyan2/80">WHEEL / +−</b> zoom</span>
+        <span><b className="text-cyan2/80">F</b> sprinkle</span>
+        <span><b className="text-cyan2/80">C</b> clean</span>
         <span><b className="text-cyan2/80">P</b> pause</span>
       </div>
     </>
@@ -285,6 +308,102 @@ function VisitorLayer({ n }: { n: number }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── fish inspect panel ────────────────────────────────────────────────────────
+function MiniBar({ label, val }: { label: string; val: number }) {
+  const col = val > 55 ? "#58c287" : val > 30 ? "#f4b83f" : "#ff7b5c";
+  return (
+    <div>
+      <div className="flex justify-between text-[9px] tracking-wider text-dim mb-0.5">
+        <span>{label.toUpperCase()}</span>
+        <span className="tabular-nums text-ink2/80">{val}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[#04161c] border border-line/50 overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-300" style={{ width: Math.max(2, Math.min(100, val)) + "%", background: col }} />
+      </div>
+    </div>
+  );
+}
+
+function InspectPanel({ rec, focused, onFocus, onFeed, onSell, onClose }: {
+  rec: FishView; focused: boolean;
+  onFocus: () => void; onFeed: () => void; onSell: () => void; onClose: () => void;
+}) {
+  const def = SPECIES.find((s) => s.id === rec.speciesId);
+  if (!def) return null;
+  const sell = Math.round(def.cost * 0.5 * (0.5 + 0.5 * rec.scale));
+  const len = Math.round(def.L * rec.scale * 28);
+  const sat = Math.round(100 - rec.hunger);
+  return (
+    <div className="absolute left-3 bottom-11 z-30 w-[266px] toast-in">
+      <div className="rounded-[6px] border border-line bg-panel/95 shadow-[0_12px_34px_rgba(0,0,0,0.55)] overflow-hidden">
+        <div className="flex items-start justify-between px-3 pt-2.5">
+          <div>
+            <div className="font-disp font-extrabold text-[15px] text-ink2 leading-tight">{def.name}</div>
+            <div className="text-[10px] italic text-dim">{def.latin}</div>
+          </div>
+          <button onClick={onClose} aria-label="Close panel"
+            className="w-6 h-6 grid place-items-center rounded-[4px] text-dim hover:text-ink2 hover:bg-cyan2/10 transition-colors">
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+        <div className="px-3 pt-2 space-y-1.5">
+          <MiniBar label="Health" val={Math.round(rec.health)} />
+          <MiniBar label="Satiety" val={sat} />
+        </div>
+        <div className="px-3 pt-2 grid grid-cols-3 gap-1 text-center">
+          <div className="rounded-[4px] bg-[#04161c] border border-line/60 py-1">
+            <div className="text-[8px] text-dim tracking-[0.15em]">LENGTH</div>
+            <div className="font-disp font-bold text-[13px] text-cyan2">{len}<span className="text-[9px] font-body text-dim"> cm</span></div>
+          </div>
+          <div className="rounded-[4px] bg-[#04161c] border border-line/60 py-1">
+            <div className="text-[8px] text-dim tracking-[0.15em]">GROWTH</div>
+            <div className="font-disp font-bold text-[13px] text-cyan2">{Math.round(rec.scale * 100)}<span className="text-[9px] font-body text-dim"> %</span></div>
+          </div>
+          <div className="rounded-[4px] bg-[#04161c] border border-line/60 py-1">
+            <div className="text-[8px] text-dim tracking-[0.15em]">VALUE</div>
+            <div className="font-disp font-bold text-[13px] text-amber2">{fmt$(sell)}</div>
+          </div>
+        </div>
+        <p className="px-3 pt-2 text-[10px] text-dim leading-snug">{def.fact}</p>
+        <div className="px-3 py-2.5 flex gap-1.5">
+          <button onClick={onFocus}
+            className={"flex-1 flex items-center justify-center gap-1.5 h-8 rounded-[4px] border font-disp font-bold text-[11px] tracking-wide transition-all active:scale-95 " +
+              (focused
+                ? "border-amber2 bg-amber2 text-[#241503] shadow-[0_0_14px_rgba(244,184,63,0.35)]"
+                : "border-amber2/60 text-amber2 hover:bg-amber2/10")}>
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="6.5" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>
+            {focused ? "UNFOCUS" : "FOCUS CAM"}
+          </button>
+          <button onClick={onFeed}
+            className="flex-1 h-8 rounded-[4px] border border-cyan2/60 text-cyan2 font-disp font-bold text-[11px] tracking-wide hover:bg-cyan2/10 transition-all active:scale-95">
+            FEED {fmt$(FEED_BTN_COST)}
+          </button>
+          <button onClick={onSell}
+            className="flex-1 h-8 rounded-[4px] border border-coral2/60 text-coral2 font-disp font-bold text-[11px] tracking-wide hover:bg-coral2/10 transition-all active:scale-95">
+            SELL +{fmt$(sell)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── zoom cluster ──────────────────────────────────────────────────────────────
+function ZoomCluster({ pct, onZoom }: { pct: number; onZoom: (d: number) => void }) {
+  const btn = "w-8 h-8 grid place-items-center rounded-[5px] border border-line bg-panel/95 text-cyan2 hover:bg-cyan2/15 hover:text-ink2 active:scale-90 transition-all shadow-[0_4px_14px_rgba(0,0,0,0.4)]";
+  return (
+    <div className="absolute right-3 bottom-11 z-20 flex flex-col items-center gap-1">
+      <button className={btn} onClick={() => onZoom(1.6)} aria-label="Zoom in">
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L21 21M8 10.5h5M10.5 8v5" /></svg>
+      </button>
+      <div className="font-disp font-bold text-[10px] text-cyan2/90 tabular-nums px-1 py-0.5 rounded-[4px] bg-panel/90 border border-line/70">{pct}%</div>
+      <button className={btn} onClick={() => onZoom(-1.6)} aria-label="Zoom out">
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L21 21M8 10.5h5" /></svg>
+      </button>
     </div>
   );
 }

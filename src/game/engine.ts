@@ -64,6 +64,12 @@ export class Engine {
   private shakeT = 0; private shakeAmp = 0;
   private mx = 0; private my = 0; private camDist = 15.8;
   private t = 0;
+  private pan = new THREE.Vector3(0, 3.35, 0);
+  private keys = new Set<string>();
+  private focusId: string | null = null;
+  private hoverDirty = false;
+  private hoverNdc = new THREE.Vector2();
+  private drag = { on: false, x: 0, y: 0, sx: 0, sy: 0, moved: false };
 
   private sun!: THREE.DirectionalLight;
   private amb!: THREE.HemisphereLight;
@@ -79,6 +85,9 @@ export class Engine {
 
   onFrame: ((dt: number) => void) | null = null;
   onWaterClick: ((x: number, y: number) => void) | null = null;
+  onFishClick: ((id: string) => void) | null = null;
+  onFocusLost: (() => void) | null = null;
+  onZoomChange: ((pct: number) => void) | null = null;
 
   // ── lifecycle ─────────────────────────────────────────────────────────────
   init(container: HTMLElement) {
@@ -90,7 +99,7 @@ export class Engine {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2("#0a3540", 0.014);
+    this.scene.fog = new THREE.FogExp2("#1d6d78", 0.008);
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 120);
     this.camera.position.set(0, 3.45, this.camDist);
     this.camera.lookAt(0, 3.35, 0);
@@ -117,6 +126,8 @@ export class Engine {
   dispose() {
     cancelAnimationFrame(this.raf);
     this.ro?.disconnect();
+    window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("keyup", this.onKeyUp);
     this.renderer?.dispose();
     if (this.renderer?.domElement.parentElement === this.container) this.container?.removeChild(this.renderer.domElement);
   }
@@ -133,6 +144,10 @@ export class Engine {
     for (const d of this.decors) this.scene.remove(d);
     this.fishes = []; this.pellets = []; this.decors = [];
     this.leafSwayers = this.leafSwayers.slice(0, this.persistSway);
+    this.focusId = null;
+    this.pan.set(0, 3.35, 0);
+    this.camDist = 15.8;
+    this.emitZoom();
   }
 
   private resize() {
@@ -145,30 +160,33 @@ export class Engine {
 
   // ── scene construction ────────────────────────────────────────────────────
   private buildLights() {
-    this.amb = new THREE.HemisphereLight("#9fd4cc", "#1c2a26", 0.55);
+    this.amb = new THREE.HemisphereLight("#cdeee2", "#3d574a", 0.95);
     this.scene.add(this.amb);
-    this.sun = new THREE.DirectionalLight("#e8f4e6", 1.05);
+    this.sun = new THREE.DirectionalLight("#f2f7e8", 1.45);
     this.sun.position.set(4, 11, 6);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     const sc = this.sun.shadow.camera;
     sc.left = -11; sc.right = 11; sc.top = 9; sc.bottom = -2; sc.near = 1; sc.far = 32;
     this.scene.add(this.sun);
-    const fill = new THREE.PointLight("#3d8a94", 0.5, 30);
-    fill.position.set(-6, 4.5, 5);
+    const fill = new THREE.PointLight("#6fc2c8", 0.85, 36);
+    fill.position.set(-6, 4.5, 5.5);
     this.scene.add(fill);
+    const front = new THREE.DirectionalLight("#cfe9e2", 0.55);
+    front.position.set(-2, 5, 13);
+    this.scene.add(front);
   }
 
   private buildTank() {
     const sandTex = canvasTex(512, 256, (g) => {
-      g.fillStyle = "#6d675a"; g.fillRect(0, 0, 512, 256);
+      g.fillStyle = "#87806e"; g.fillRect(0, 0, 512, 256);
       for (let i = 0; i < 5200; i++) {
-        const v = 90 + Math.random() * 60;
+        const v = 112 + Math.random() * 72;
         g.fillStyle = `rgba(${v},${v - 8},${v - 20},${0.25 + Math.random() * 0.3})`;
         g.fillRect(Math.random() * 512, Math.random() * 256, 1.4, 1.4);
       }
       for (let i = 0; i < 140; i++) {
-        const v = 70 + Math.random() * 80;
+        const v = 96 + Math.random() * 88;
         g.fillStyle = `rgba(${v},${v - 6},${v - 16},0.8)`;
         g.beginPath();
         g.ellipse(Math.random() * 512, Math.random() * 256, 1.5 + Math.random() * 2.5, 1 + Math.random() * 1.8, Math.random() * 3, 0, Math.PI * 2);
@@ -195,13 +213,13 @@ export class Engine {
 
     const backTex = canvasTex(256, 256, (g) => {
       const gr = g.createLinearGradient(0, 0, 0, 256);
-      gr.addColorStop(0, "#0d4149");
-      gr.addColorStop(0.55, "#08303a");
-      gr.addColorStop(1, "#041d26");
+      gr.addColorStop(0, "#2e848d");
+      gr.addColorStop(0.55, "#1a5f6b");
+      gr.addColorStop(1, "#0e4150");
       g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
-      g.globalAlpha = 0.08;
+      g.globalAlpha = 0.1;
       for (let i = 0; i < 26; i++) {
-        g.fillStyle = i % 2 ? "#12525c" : "#03161d";
+        g.fillStyle = i % 2 ? "#1e6d78" : "#0b2f3b";
         g.fillRect(0, Math.random() * 256, 256, 2 + Math.random() * 8);
       }
     });
@@ -214,7 +232,7 @@ export class Engine {
     this.scene.add(back);
 
     // side glass
-    const glassMat = new THREE.MeshStandardMaterial({ color: "#9fd8d4", transparent: true, opacity: 0.1, roughness: 0.15, metalness: 0.2 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: "#c9ede7", transparent: true, opacity: 0.13, roughness: 0.15, metalness: 0.2 });
     for (const sx of [-1, 1]) {
       const side = new THREE.Mesh(new THREE.PlaneGeometry(5.4, 7), glassMat);
       side.rotation.y = -sx * Math.PI / 2;
@@ -237,7 +255,7 @@ export class Engine {
     });
     const frontGlass = new THREE.Mesh(
       new THREE.PlaneGeometry(17.2, 7),
-      new THREE.MeshBasicMaterial({ map: streakTex, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })
+      new THREE.MeshBasicMaterial({ map: streakTex, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false })
     );
     frontGlass.position.set(0, 3.4, 2.92);
     this.scene.add(frontGlass);
@@ -262,7 +280,7 @@ export class Engine {
     // water surface line
     const surf = new THREE.Mesh(
       new THREE.BoxGeometry(17.2, 0.07, 5.4),
-      new THREE.MeshBasicMaterial({ color: "#9fe8da", transparent: true, opacity: 0.4 })
+      new THREE.MeshBasicMaterial({ color: "#c2f2e2", transparent: true, opacity: 0.5 })
     );
     surf.position.y = 6.14;
     this.scene.add(surf);
@@ -282,7 +300,7 @@ export class Engine {
     });
     for (let i = 0; i < 4; i++) {
       const mat = new THREE.MeshBasicMaterial({
-        map: shaftTex, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending,
+        map: shaftTex, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending,
         depthWrite: false, side: THREE.DoubleSide,
       });
       const sh = new THREE.Mesh(new THREE.PlaneGeometry(1.6 + i * 0.5, 7.4), mat);
@@ -383,7 +401,7 @@ export class Engine {
     }
     const bGeo = new THREE.BufferGeometry();
     bGeo.setAttribute("position", new THREE.BufferAttribute(bPos, 3));
-    this.bubbleMat = new THREE.PointsMaterial({ map: tex, color: "#d6f4ec", size: 0.11, transparent: true, opacity: 0.7, depthWrite: false });
+    this.bubbleMat = new THREE.PointsMaterial({ map: tex, color: "#e6f9f1", size: 0.11, transparent: true, opacity: 0.85, depthWrite: false });
     this.bubblePts = new THREE.Points(bGeo, this.bubbleMat);
     this.scene.add(this.bubblePts);
     // detritus
@@ -469,15 +487,15 @@ export class Engine {
     const t = this.t;
     // environment
     const dl = this.daylight;
-    this.sun.intensity = 0.3 + 0.85 * dl + Math.sin(t * 1.7) * 0.03;
-    this.amb.intensity = 0.3 + 0.3 * dl;
+    this.sun.intensity = 0.85 + 0.85 * dl + Math.sin(t * 1.7) * 0.03;
+    this.amb.intensity = 0.62 + 0.35 * dl;
     const murk = this.dirt / 100;
     const fog = this.scene.fog as THREE.FogExp2;
-    fog.density = 0.012 + murk * 0.017;
-    const fogCol = new THREE.Color("#0a3540").lerp(new THREE.Color("#233d2a"), murk * 0.9).multiplyScalar(0.55 + 0.45 * dl);
+    fog.density = 0.006 + murk * 0.015;
+    const fogCol = new THREE.Color("#1d6d78").lerp(new THREE.Color("#33512f"), murk * 0.85).multiplyScalar(0.72 + 0.28 * dl);
     fog.color.copy(fogCol);
-    this.renderer.setClearColor(new THREE.Color("#03151b").lerp(new THREE.Color("#02100f"), murk * 0.7));
-    this.shaftMats.forEach((m, i) => { m.opacity = (0.05 + 0.07 * Math.abs(Math.sin(t * 0.25 + i * 1.7))) * dl * (1 - murk * 0.8); });
+    this.renderer.setClearColor(new THREE.Color("#0e3d47").lerp(new THREE.Color("#123326"), murk * 0.7));
+    this.shaftMats.forEach((m, i) => { m.opacity = (0.06 + 0.08 * Math.abs(Math.sin(t * 0.25 + i * 1.7))) * (0.45 + 0.55 * dl) * (1 - murk * 0.8); });
     for (const l of this.leafSwayers) l.piv.rotation.z = l.base + Math.sin(t * l.sp + l.ph) * 0.1;
     this.detMat.opacity = murk * 0.55;
     const dPos = this.detPts.geometry.attributes.position as THREE.BufferAttribute;
@@ -499,16 +517,48 @@ export class Engine {
     });
     bPos.needsUpdate = true;
 
-    // camera
+    // camera: follow / keys pan / drag pan (applied in input) / parallax / shake
+    const zk = this.camDist / 15.8;
+    if (this.focusId) {
+      const f = this.fishes.find((x) => x.id === this.focusId);
+      if (f) {
+        const fx = Math.max(-7.4, Math.min(7.4, f.pos.x));
+        const fy = Math.max(1.2, Math.min(5.6, f.pos.y));
+        this.pan.x += (fx - this.pan.x) * Math.min(1, dt * 3.2);
+        this.pan.y += (fy - this.pan.y) * Math.min(1, dt * 3.2);
+      }
+    }
+    const pv = 6.5 * zk * dt;
+    let km = false;
+    if (this.keys.has("arrowleft") || this.keys.has("a")) { this.pan.x -= pv; km = true; }
+    if (this.keys.has("arrowright") || this.keys.has("d")) { this.pan.x += pv; km = true; }
+    if (this.keys.has("arrowup") || this.keys.has("w")) { this.pan.y += pv; km = true; }
+    if (this.keys.has("arrowdown") || this.keys.has("s")) { this.pan.y -= pv; km = true; }
+    if (km) {
+      this.pan.x = Math.max(-7.4, Math.min(7.4, this.pan.x));
+      this.pan.y = Math.max(1.2, Math.min(5.6, this.pan.y));
+      this.cancelFollow();
+    }
+
     const sh = this.shakeT > 0 ? this.shakeT : 0;
     this.shakeT = Math.max(0, this.shakeT - dt * 2.4);
     const ox = (Math.random() - 0.5) * this.shakeAmp * sh;
     const oy = (Math.random() - 0.5) * this.shakeAmp * sh;
     if (sh === 0) this.shakeAmp = 0;
-    this.camera.position.x += (this.mx * 0.75 + ox - this.camera.position.x) * Math.min(1, dt * 3);
-    this.camera.position.y += (3.45 + this.my * 0.4 + oy - this.camera.position.y) * Math.min(1, dt * 3);
+    const tx = this.pan.x + this.mx * 0.9 * zk + ox;
+    const ty = this.pan.y + this.my * 0.5 * zk + oy;
+    this.camera.position.x += (tx - this.camera.position.x) * Math.min(1, dt * 3);
+    this.camera.position.y += (ty - this.camera.position.y) * Math.min(1, dt * 3);
     this.camera.position.z += (this.camDist - this.camera.position.z) * Math.min(1, dt * 4);
-    this.camera.lookAt(0, 3.35, 0);
+    this.camera.lookAt(this.pan.x, this.pan.y, 0);
+
+    // hover → pointer cursor over fish
+    if (this.hoverDirty && !this.drag.on) {
+      this.hoverDirty = false;
+      this.ray.setFromCamera(this.hoverNdc, this.camera);
+      const over = this.ray.intersectObjects(this.fishes.map((f) => f.rig.body), false).length > 0;
+      this.renderer.domElement.style.cursor = over ? "pointer" : "crosshair";
+    }
 
     this.updatePellets(dt);
     this.updateFishes(dt);
@@ -567,6 +617,7 @@ export class Engine {
         if (f.floatT > 7) {
           this.scene.remove(g);
           this.fishes.splice(i, 1);
+          if (this.focusId === f.id) { this.focusId = null; this.onFocusLost?.(); }
           this.bridge?.onFishGone(f.id);
         }
         continue;
@@ -673,25 +724,89 @@ export class Engine {
 
   private bindInput() {
     const el = this.renderer.domElement;
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
     el.addEventListener("pointermove", (e) => {
       const r = el.getBoundingClientRect();
       this.mx = ((e.clientX - r.left) / r.width) * 2 - 1;
       this.my = -(((e.clientY - r.top) / r.height) * 2 - 1);
+      this.hoverNdc.set(this.mx, this.my);
+      this.hoverDirty = true;
+      if (this.drag.on && e.buttons > 0) {
+        const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
+        this.drag.x = e.clientX; this.drag.y = e.clientY;
+        if (!this.drag.moved && Math.hypot(e.clientX - this.drag.sx, e.clientY - this.drag.sy) > 5) this.drag.moved = true;
+        if (this.drag.moved) {
+          const k = this.camDist / 15.8;
+          this.pan.x = Math.max(-7.4, Math.min(7.4, this.pan.x - dx * 0.012 * k));
+          this.pan.y = Math.max(1.2, Math.min(5.6, this.pan.y + dy * 0.01 * k));
+          this.cancelFollow();
+        }
+      }
     });
     el.addEventListener("pointerdown", (e) => {
+      this.drag = { on: true, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+    });
+    el.addEventListener("pointerup", (e) => {
+      const wasDrag = this.drag.on && this.drag.moved;
+      this.drag.on = false;
+      if (wasDrag) return;
       const r = el.getBoundingClientRect();
       this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1));
       this.ray.setFromCamera(this.ndc, this.camera);
+      const hits = this.ray.intersectObjects(this.fishes.filter((f) => f.floatT === 0).map((f) => f.rig.body), false);
+      if (hits.length) {
+        const fv = this.fishes.find((f) => f.rig.body === hits[0].object);
+        if (fv) { this.onFishClick?.(fv.id); return; }
+      }
       if (this.ray.ray.intersectPlane(this.plane, this.hit)) {
         const x = Math.max(-TANK.hx + 0.5, Math.min(TANK.hx - 0.5, this.hit.x));
         const y = Math.max(1.0, Math.min(5.8, this.hit.y));
         this.onWaterClick?.(x, y);
       }
     });
+    el.addEventListener("pointerleave", () => { this.drag.on = false; });
     el.addEventListener("wheel", (e) => {
       e.preventDefault();
-      this.camDist = Math.max(13.2, Math.min(18.5, this.camDist + e.deltaY * 0.008));
+      this.camDist = Math.max(9.5, Math.min(24, this.camDist + e.deltaY * 0.011));
+      this.emitZoom();
     }, { passive: false });
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+  }
+
+  private onKeyDown = (e: KeyboardEvent) => {
+    const k = e.key.toLowerCase();
+    if (["arrowleft", "arrowright", "arrowup", "arrowdown", "w", "a", "s", "d"].includes(k)) {
+      this.keys.add(k);
+      if (k.startsWith("arrow")) e.preventDefault();
+    }
+  };
+  private onKeyUp = (e: KeyboardEvent) => { this.keys.delete(e.key.toLowerCase()); };
+
+  // ── camera API ────────────────────────────────────────────────────────────
+  private emitZoom() { this.onZoomChange?.(Math.round((15.8 / this.camDist) * 100)); }
+  zoomBy(d: number) {
+    this.camDist = Math.max(9.5, Math.min(24, this.camDist - d));
+    this.emitZoom();
+  }
+  focusFish(id: string | null) {
+    this.focusId = id;
+    if (id && this.camDist > 12.5) { this.camDist = 12.5; this.emitZoom(); }
+  }
+  private cancelFollow() {
+    if (this.focusId) { this.focusId = null; this.onFocusLost?.(); }
+  }
+
+  removeFish(id: string) {
+    const i = this.fishes.findIndex((f) => f.id === id);
+    if (i >= 0) { this.scene.remove(this.fishes[i].rig.group); this.fishes.splice(i, 1); }
+    if (this.focusId === id) { this.focusId = null; this.onFocusLost?.(); }
+  }
+
+  dropPelletsAt(id: string, n: number) {
+    const f = this.fishes.find((x) => x.id === id);
+    if (!f) return;
+    this.dropPellets(n, f.pos.x, Math.min(5.9, f.pos.y + 1.1));
   }
 }
 

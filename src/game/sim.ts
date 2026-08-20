@@ -9,12 +9,13 @@ export type Phase = "menu" | "playing" | "paused" | "over" | "won";
 export interface FishRecord { id: string; speciesId: string; hunger: number; health: number; scale: number; dead: boolean; }
 export interface Toast { id: number; kind: "good" | "warn" | "info" | "money"; msg: string; until: number; }
 
+export interface FishView { id: string; speciesId: string; hunger: number; health: number; scale: number; }
 export interface Snapshot {
   phase: Phase;
   cash: number; income: number; visitors: number; rep: number;
   day: number; clock: string; night: boolean;
   dirt: number; avgHunger: number; bioload: number; cap: number;
-  fishCount: number; speciesCount: Record<string, number>;
+  fishCount: number; fish: FishView[]; speciesCount: Record<string, number>;
   owned: string[]; claimed: string[];
   cleanCd: number; bankruptWarn: number;
   toasts: Toast[];
@@ -130,6 +131,29 @@ export class Sim {
     this.cash -= FEED_CLICK_COST;
     this.engine.dropPellets(2, x, y);
     sfx.plop();
+  }
+
+  targetFeed(fishId: string) {
+    if (this.phase !== "playing") return;
+    const f = this.fishes.find((x) => x.id === fishId && !x.dead);
+    if (!f) return;
+    if (this.cash < FEED_BTN_COST) { this.deny("Can't afford feed."); return; }
+    this.cash -= FEED_BTN_COST;
+    this.engine.dropPelletsAt(fishId, 3);
+    sfx.plop();
+  }
+
+  sellFish(fishId: string) {
+    if (this.phase !== "playing") return;
+    const f = this.fishes.find((x) => x.id === fishId);
+    if (!f || f.dead) return;
+    const def = SPECIES.find((s) => s.id === f.speciesId);
+    const refund = Math.round((def?.cost ?? 10) * 0.5 * (0.5 + 0.5 * f.scale));
+    this.cash += refund;
+    this.fishes = this.fishes.filter((x) => x.id !== fishId);
+    this.engine.removeFish(fishId);
+    sfx.coin();
+    this.toast("money", `${def?.name ?? "Fish"} rehomed  +$${refund}`);
   }
 
   clean() {
@@ -305,7 +329,9 @@ export class Sim {
       dirt: this.dirt,
       avgHunger: alive.length ? alive.reduce((s, f) => s + f.hunger, 0) / alive.length : 0,
       bioload: this.bioload, cap: this.cap,
-      fishCount: alive.length, speciesCount,
+      fishCount: alive.length,
+      fish: alive.map((f) => ({ id: f.id, speciesId: f.speciesId, hunger: f.hunger, health: f.health, scale: f.scale })),
+      speciesCount,
       owned: [...this.owned], claimed: [...this.claimed],
       cleanCd: this.cleanCd / CLEAN_COOLDOWN,
       bankruptWarn: this.bankruptT > 0 ? Math.max(0, 12 - this.bankruptT) : 0,

@@ -67,6 +67,7 @@ export function MenuScreen({ onStart }: { onStart: () => void }) {
         <div className="space-y-2 my-4 text-[12px] text-dim">
           <div className="flex items-center gap-2.5"><span className="w-5 h-5 shrink-0 text-cyan2">{I.fish()}</span><span><b className="text-ink2">Stock the tank</b> — every species adds appeal, bioload and appetite.</span></div>
           <div className="flex items-center gap-2.5"><span className="w-5 h-5 shrink-0 text-cyan2">{I.flake()}</span><span><b className="text-ink2">Click the water</b> to drop feed; keep shoals fed and the glass clean.</span></div>
+          <div className="flex items-center gap-2.5"><span className="w-5 h-5 shrink-0 text-cyan2">{I.drop()}</span><span><b className="text-ink2">Click a fish</b> to inspect it and focus the camera — drag or WASD to move, scroll to zoom.</span></div>
           <div className="flex items-center gap-2.5"><span className="w-5 h-5 shrink-0 text-amber2">{I.coin()}</span><span><b className="text-ink2">Visitors pay admission</b> — reputation climbs with health, variety and clean water. Certificates pay bonuses.</span></div>
         </div>
         <div className="flex flex-wrap gap-1 mb-5">
@@ -93,7 +94,7 @@ export function PauseScreen({ onResume, onRestart }: { onResume: () => void; onR
           <Btn onClick={onResume}>RESUME</Btn>
           <Btn onClick={onRestart} kind="ghost">RESTART</Btn>
         </div>
-        <div className="text-[10.5px] text-dim mt-4">F feed · C clean · click water to target-feed · scroll to zoom · M mute</div>
+        <div className="text-[10.5px] text-dim mt-4">F feed · C clean · click fish to inspect · drag/WASD move cam · scroll zoom · M mute</div>
       </Placard>
     </div>
   );
