@@ -98,6 +98,12 @@ export class Engine {
   private bubbleAcc = 0;
   private oxygen = 90;
   private decorBubblers: THREE.Vector3[] = [];
+  private causticMats: THREE.MeshBasicMaterial[] = [];
+  private shimmerMats: THREE.MeshBasicMaterial[] = [];
+  private motePts!: THREE.Points; private moteBase: Float32Array = new Float32Array(0); private moteMat!: THREE.PointsMaterial;
+  private snails: { g: THREE.Group; x: number; y: number; sp: number; hold: number; dir: number; ph: number }[] = [];
+  private plantAnchors: { x: number; z: number }[] = [];
+  private persistAnchors = 0;
   private beamMats: THREE.ShaderMaterial[] = [];
   private stripMats: THREE.MeshStandardMaterial[] = [];
   private beamLight: THREE.PointLight | null = null;
@@ -125,7 +131,11 @@ export class Engine {
     this.camera.lookAt(0, 3.35, 0);
 
     this.buildLights();
+    this.buildRoom();
     this.buildTank();
+    this.buildSandDetail();
+    this.buildWaterFX();
+    this.buildSnails();
     this.buildParticles();
     this.bindInput();
 
@@ -166,6 +176,7 @@ export class Engine {
     for (const d of this.decors) this.scene.remove(d);
     this.fishes = []; this.pellets = []; this.decors = []; this.decorBubblers = [];
     this.leafSwayers = this.leafSwayers.slice(0, this.persistSway);
+    this.plantAnchors = this.plantAnchors.slice(0, this.persistAnchors);
     this.focusId = null;
     this.pan.set(0, 3.35, 0);
     this.camDist = 15.8;
@@ -343,6 +354,7 @@ export class Engine {
     this.spawnPlantClump(-6.4, 0.9, 9, 2.6, true);
     this.spawnPlantClump(6.6, -1.3, 6, 1.4, true);
     this.persistSway = this.leafSwayers.length;
+    this.persistAnchors = this.plantAnchors.length;
   }
 
   private spawnRocks(cx: number, n: number, persist = false) {
@@ -388,6 +400,7 @@ export class Engine {
       g.add(piv);
       this.leafSwayers.push({ piv, base: piv.rotation.z, ph: Math.random() * 9, sp: 0.7 + Math.random() * 0.8 });
     }
+    this.plantAnchors.push({ x: cx, z: cz });
     this.scene.add(g);
     if (!persist) this.decors.push(g);
   }
@@ -612,6 +625,279 @@ export class Engine {
     this.decors.push(g);
   }
 
+  // ── gallery room around the tank ──────────────────────────────────────────
+  private buildRoom() {
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(70, 34),
+      new THREE.MeshStandardMaterial({ color: "#15262c", roughness: 1, metalness: 0 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -2.62;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+
+    const wallTex = canvasTex(256, 256, (g) => {
+      const gr = g.createLinearGradient(0, 0, 0, 256);
+      gr.addColorStop(0, "#0d2530");
+      gr.addColorStop(0.62, "#0a1f29");
+      gr.addColorStop(1, "#081a22");
+      g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+      g.globalAlpha = 0.05;
+      for (let i = 0; i < 22; i++) {
+        g.fillStyle = i % 2 ? "#16414d" : "#05141b";
+        g.fillRect(0, Math.random() * 256, 256, 1.5 + Math.random() * 5);
+      }
+    });
+    const wall = new THREE.Mesh(
+      new THREE.PlaneGeometry(70, 22),
+      new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.95 })
+    );
+    wall.position.set(0, 6, -8.5);
+    wall.receiveShadow = true;
+    this.scene.add(wall);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(70, 0.07, 0.1), new THREE.MeshStandardMaterial({ color: "#13333d", roughness: 0.7 }));
+    rail.position.set(0, 0.4, -8.42);
+    this.scene.add(rail);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(70, 0.42, 0.24), new THREE.MeshStandardMaterial({ color: "#0d2129", roughness: 0.9 }));
+    base.position.set(0, -2.4, -8.38);
+    this.scene.add(base);
+
+    // framed pike lithograph on the left wall stretch
+    const art = canvasTex(512, 640, (g) => {
+      g.fillStyle = "#071a21"; g.fillRect(0, 0, 512, 640);
+      g.fillStyle = "#0c2a33"; g.fillRect(26, 26, 460, 588);
+      g.strokeStyle = "#1d4652"; g.lineWidth = 8; g.strokeRect(12, 12, 488, 616);
+      g.strokeStyle = "#57948f"; g.lineWidth = 6; g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(84, 330);
+      g.bezierCurveTo(170, 240, 330, 226, 428, 300);
+      g.bezierCurveTo(370, 340, 190, 356, 84, 330);
+      g.stroke();
+      g.beginPath(); g.moveTo(428, 300); g.lineTo(468, 262); g.lineTo(452, 306); g.lineTo(468, 348); g.closePath(); g.stroke();
+      g.beginPath(); g.moveTo(230, 350); g.lineTo(252, 392); g.lineTo(282, 352); g.stroke();
+      g.beginPath(); g.moveTo(120, 306); g.lineTo(104, 342); g.stroke();
+      g.fillStyle = "#57948f";
+      g.beginPath(); g.arc(126, 306, 7, 0, Math.PI * 2); g.fill();
+      g.font = "600 26px 'Space Grotesk', sans-serif";
+      g.fillStyle = "#3f7a78";
+      g.fillText("E S O X   L U C I U S", 128, 470);
+      g.font = "400 19px 'Space Grotesk', sans-serif";
+      g.fillStyle = "#2c5a5c";
+      g.fillText("Northern Pike · Coldwater Hall", 128, 502);
+    });
+    const artFrame = new THREE.Mesh(new THREE.BoxGeometry(3.1, 3.9, 0.14), new THREE.MeshStandardMaterial({ color: "#0d2027", roughness: 0.6 }));
+    artFrame.position.set(-12.4, 3.6, -8.3);
+    this.scene.add(artFrame);
+    const artFace = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 3.6), new THREE.MeshStandardMaterial({ map: art, roughness: 0.9 }));
+    artFace.position.set(-12.4, 3.6, -8.2);
+    this.scene.add(artFace);
+
+    // warm floor lamp on the right — a single warm accent against the teal
+    const lamp = new THREE.Group();
+    const lbase = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.1, 14), new THREE.MeshStandardMaterial({ color: "#1a2a2f", roughness: 0.5, metalness: 0.5 }));
+    lbase.position.y = -2.56;
+    lamp.add(lbase);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 3.6, 8), new THREE.MeshStandardMaterial({ color: "#2a3a3f", roughness: 0.4, metalness: 0.7 }));
+    pole.position.y = -0.75;
+    lamp.add(pole);
+    const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.55, 0.62, 14, 1, true),
+      new THREE.MeshStandardMaterial({ color: "#233438", roughness: 0.7, side: THREE.DoubleSide }));
+    shade.position.y = 1.05;
+    lamp.add(shade);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8),
+      new THREE.MeshStandardMaterial({ color: "#ffe6c4", emissive: "#ffc98e", emissiveIntensity: 2.2 }));
+    bulb.position.y = 0.98;
+    lamp.add(bulb);
+    const warm = new THREE.PointLight("#ffb877", 0.55, 15);
+    warm.position.y = 0.9;
+    lamp.add(warm);
+    lamp.position.set(12.0, 0, -4.2);
+    this.scene.add(lamp);
+  }
+
+  // ── substrate scatter + tank furniture details ────────────────────────────
+  private buildSandDetail() {
+    const pebGeo = new THREE.IcosahedronGeometry(1, 0);
+    const pebMats = ["#7d7468", "#8a8072", "#6e6a5e", "#94897a"].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, flatShading: true }));
+    for (let i = 0; i < 26; i++) {
+      const r = 0.05 + Math.random() * 0.1;
+      const p = new THREE.Mesh(pebGeo, pebMats[i % pebMats.length]);
+      p.scale.set(r * (1 + Math.random() * 0.5), r * 0.6, r);
+      p.position.set((Math.random() - 0.5) * 15.5, TANK.y0 + r * 0.3, (Math.random() - 0.5) * 4);
+      p.rotation.set(Math.random(), Math.random() * 3, Math.random());
+      this.scene.add(p);
+    }
+    // leaf litter
+    const leafGeo = new THREE.PlaneGeometry(0.3, 0.13);
+    const leafCols = ["#6b5638", "#7a6544", "#5c4a30"];
+    for (let i = 0; i < 7; i++) {
+      const l = new THREE.Mesh(leafGeo, new THREE.MeshStandardMaterial({ color: leafCols[i % 3], roughness: 1, side: THREE.DoubleSide }));
+      l.position.set((Math.random() - 0.5) * 14, TANK.y0 + 0.015, (Math.random() - 0.5) * 3.8);
+      l.rotation.set(-Math.PI / 2 + (Math.random() - 0.5) * 0.3, 0, Math.random() * Math.PI * 2);
+      this.scene.add(l);
+    }
+    // empty snail shells
+    const shellMat = new THREE.MeshStandardMaterial({ color: "#b3a17c", roughness: 0.7, flatShading: true });
+    for (const [sx, sz] of [[-6.6, 0.7], [5.9, -0.9]] as const) {
+      const sh = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 7), shellMat);
+      sh.position.set(sx, TANK.y0 + 0.05, sz);
+      sh.rotation.z = Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+      this.scene.add(sh);
+    }
+    // hood center braces (real tanks have glass crossbars)
+    const braceMat = new THREE.MeshStandardMaterial({ color: "#c9ede7", transparent: true, opacity: 0.22, roughness: 0.15 });
+    for (const bx of [-2.8, 2.8]) {
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 5.3), braceMat);
+      brace.position.set(bx, 6.88, 0);
+      this.scene.add(brace);
+    }
+    // cabinet hardware: door seams, handles, status LED, nameplate
+    const seamMat = new THREE.MeshStandardMaterial({ color: "#050f14", roughness: 0.9 });
+    for (const sx of [-4.6, 0, 4.6]) {
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.025, 2.1, 0.03), seamMat);
+      seam.position.set(sx, -1.4, 3.31);
+      this.scene.add(seam);
+    }
+    const handleMat = new THREE.MeshStandardMaterial({ color: "#3c5058", roughness: 0.35, metalness: 0.7 });
+    for (const sx of [-2.3, 2.3]) {
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.06, 0.07), handleMat);
+      h.position.set(sx, -1.15, 3.33);
+      this.scene.add(h);
+    }
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.03),
+      new THREE.MeshStandardMaterial({ color: "#7dffd0", emissive: "#46e8a8", emissiveIntensity: 1.8 }));
+    led.position.set(7.9, -0.75, 3.32);
+    this.scene.add(led);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.34, 0.03), new THREE.MeshStandardMaterial({ color: "#10242c", roughness: 0.5, metalness: 0.4 }));
+    plate.position.set(0, -0.72, 3.32);
+    this.scene.add(plate);
+    // airline hose from the aerator up over the rim
+    const hosePts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 10; i++) {
+      const tt = i / 10;
+      hosePts.push(new THREE.Vector3(
+        this.aeratorPos.x + 0.1,
+        this.aeratorPos.y + tt * (7.05 - this.aeratorPos.y) + Math.sin(tt * Math.PI) * 0.4,
+        this.aeratorPos.z - tt * 0.7));
+    }
+    const hose = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(hosePts), 18, 0.03, 6),
+      new THREE.MeshStandardMaterial({ color: "#22343a", roughness: 0.6 }));
+    this.scene.add(hose);
+  }
+
+  // ── animated water light: caustics, shimmer, scum line ────────────────────
+  private buildWaterFX() {
+    const causticTex = canvasTex(256, 256, (g) => {
+      g.clearRect(0, 0, 256, 256);
+      for (let i = 0; i < 46; i++) {
+        const x = Math.random() * 256, y = Math.random() * 256, r = 8 + Math.random() * 36;
+        const a0 = Math.random() * Math.PI * 2, a1 = a0 + 0.8 + Math.random() * 2.2;
+        g.strokeStyle = `rgba(214,250,240,${0.14 + Math.random() * 0.2})`;
+        g.lineWidth = 1 + Math.random() * 2.6;
+        for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) {
+          g.beginPath(); g.arc(x + ox, y + oy, r, a0, a1); g.stroke();
+        }
+      }
+    });
+    causticTex.wrapS = causticTex.wrapT = THREE.RepeatWrapping;
+    causticTex.repeat.set(3, 1.4);
+    const sandCaustic = new THREE.Mesh(
+      new THREE.PlaneGeometry(17, 5.3),
+      new THREE.MeshBasicMaterial({ map: causticTex, transparent: true, opacity: 0.11, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    sandCaustic.rotation.x = -Math.PI / 2;
+    sandCaustic.position.y = TANK.y0 + 0.07;
+    this.causticMats.push(sandCaustic.material as THREE.MeshBasicMaterial);
+    this.scene.add(sandCaustic);
+
+    const wallCausticTex = causticTex.clone();
+    wallCausticTex.needsUpdate = true;
+    wallCausticTex.repeat.set(2.4, 1);
+    const backCaustic = new THREE.Mesh(
+      new THREE.PlaneGeometry(17, 5.4),
+      new THREE.MeshBasicMaterial({ map: wallCausticTex, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    backCaustic.position.set(0, 3.35, -2.62);
+    this.causticMats.push(backCaustic.material as THREE.MeshBasicMaterial);
+    this.scene.add(backCaustic);
+
+    const shimmerTex = canvasTex(256, 64, (g) => {
+      g.clearRect(0, 0, 256, 64);
+      for (let i = 0; i < 26; i++) {
+        const y = Math.random() * 64;
+        g.strokeStyle = `rgba(222,255,246,${0.2 + Math.random() * 0.3})`;
+        g.lineWidth = 0.8 + Math.random() * 1.4;
+        for (const ox of [-256, 0, 256]) {
+          g.beginPath(); g.moveTo(ox - 10, y);
+          g.quadraticCurveTo(ox + 64, y - 5 + Math.random() * 10, ox + 128, y);
+          g.quadraticCurveTo(ox + 192, y - 5 + Math.random() * 10, ox + 266, y);
+          g.stroke();
+        }
+      }
+    });
+    shimmerTex.wrapS = THREE.RepeatWrapping;
+    shimmerTex.repeat.set(2, 1);
+    const sh2 = shimmerTex.clone();
+    sh2.needsUpdate = true;
+    sh2.wrapS = THREE.RepeatWrapping;
+    sh2.repeat.set(3.2, 1);
+    for (const [tex, op] of [[shimmerTex, 0.055], [sh2, 0.04]] as const) {
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(16.9, 5.1),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false })
+      );
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = 6.04;
+      this.shimmerMats.push(m.material as THREE.MeshBasicMaterial);
+      this.scene.add(m);
+    }
+
+    // scum / waterline mark on the front glass
+    const scumTex = canvasTex(256, 32, (g) => {
+      g.clearRect(0, 0, 256, 32);
+      for (let i = 0; i < 60; i++) {
+        g.fillStyle = `rgba(205,220,200,${0.1 + Math.random() * 0.3})`;
+        g.fillRect(Math.random() * 256, 10 + Math.random() * 12, 2 + Math.random() * 14, 1 + Math.random() * 2);
+      }
+    });
+    const scum = new THREE.Mesh(
+      new THREE.PlaneGeometry(17.1, 0.16),
+      new THREE.MeshBasicMaterial({ map: scumTex, transparent: true, opacity: 0.35, depthWrite: false })
+    );
+    scum.position.set(0, 5.98, 2.91);
+    this.scene.add(scum);
+  }
+
+  // ── pond snails grazing the back glass ────────────────────────────────────
+  private buildSnails() {
+    const configs = [
+      { x: -4.2, shell: "#a58f68", body: "#75705b" },
+      { x: 0.9, shell: "#8f8468", body: "#6b6f5a" },
+      { x: 4.8, shell: "#b39a72", body: "#7d7660" },
+    ];
+    for (let i = 0; i < configs.length; i++) {
+      const c = configs[i];
+      const g = new THREE.Group();
+      const shell = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.17, 7),
+        new THREE.MeshStandardMaterial({ color: c.shell, roughness: 0.65, flatShading: true }));
+      shell.rotation.x = -1.05;
+      shell.position.set(0, 0.05, 0.02);
+      g.add(shell);
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6),
+        new THREE.MeshStandardMaterial({ color: c.body, roughness: 0.9 }));
+      body.scale.set(1, 0.72, 0.95);
+      body.position.set(0, -0.04, 0.05);
+      g.add(body);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.02, 0.17),
+        new THREE.MeshStandardMaterial({ color: c.body, roughness: 1 }));
+      foot.position.set(0, -0.1, 0.05);
+      g.add(foot);
+      g.position.set(c.x, 1.6 + i * 1.4, -2.5);
+      this.scene.add(g);
+      this.snails.push({ g, x: c.x, y: 1.6 + i * 1.4, sp: 0.045 + Math.random() * 0.04, hold: Math.random() * 5, dir: i % 2 ? -1 : 1, ph: Math.random() * 9 });
+    }
+  }
+
   private buildParticles() {
     const tex = radialTex();
     // bubbles
@@ -639,6 +925,19 @@ export class Engine {
     this.detMat = new THREE.PointsMaterial({ map: tex, color: "#39503a", size: 0.07, transparent: true, opacity: 0, depthWrite: false });
     this.detPts = new THREE.Points(dGeo, this.detMat);
     this.scene.add(this.detPts);
+    // ever-present fine motes for volumetric depth
+    const K = 130;
+    this.moteBase = new Float32Array(K * 3);
+    for (let i = 0; i < K; i++) {
+      this.moteBase[i * 3] = (Math.random() - 0.5) * 16.2;
+      this.moteBase[i * 3 + 1] = 0.9 + Math.random() * 4.9;
+      this.moteBase[i * 3 + 2] = (Math.random() - 0.5) * 4.6;
+    }
+    const mGeo = new THREE.BufferGeometry();
+    mGeo.setAttribute("position", new THREE.BufferAttribute(this.moteBase.slice(), 3));
+    this.moteMat = new THREE.PointsMaterial({ map: tex, color: "#cfe8df", size: 0.045, transparent: true, opacity: 0.15, depthWrite: false });
+    this.motePts = new THREE.Points(mGeo, this.moteMat);
+    this.scene.add(this.motePts);
   }
 
   private emitBubble(x: number, y: number, z: number, big = false) {
@@ -744,6 +1043,38 @@ export class Engine {
       if (this.beamLight) this.beamLight.intensity = 0.95 * pulse;
     }
     for (const l of this.leafSwayers) l.piv.rotation.z = l.base + Math.sin(t * l.sp + l.ph) * 0.1;
+    // caustic drift — dies away in murk and darkness
+    this.causticMats.forEach((m, i) => {
+      const tex = m.map as THREE.Texture;
+      tex.offset.x += dt * (0.014 + i * 0.006);
+      tex.offset.y += dt * (0.009 + i * 0.004);
+      m.opacity = (i === 0 ? 0.11 : 0.05) * (0.3 + 0.7 * dl) * (1 - murk * 0.75);
+    });
+    this.shimmerMats.forEach((m, i) => {
+      const tex = m.map as THREE.Texture;
+      tex.offset.x += dt * (i === 0 ? 0.05 : -0.033);
+      m.opacity = (i === 0 ? 0.055 : 0.04) * (0.35 + 0.65 * dl);
+    });
+    // fine motes
+    const mPos = this.motePts.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < mPos.count; i++) {
+      mPos.setX(i, this.moteBase[i * 3] + Math.sin(t * 0.16 + i * 1.3) * 0.4);
+      mPos.setY(i, this.moteBase[i * 3 + 1] + Math.sin(t * 0.11 + i * 2.1) * 0.45);
+    }
+    mPos.needsUpdate = true;
+    // snails: slow graze up the back glass with pauses
+    for (const s of this.snails) {
+      if (s.hold > 0) { s.hold -= dt; continue; }
+      s.y += s.sp * s.dir * dt;
+      s.x += Math.sin(t * 0.07 + s.ph) * dt * 0.03;
+      if (s.y > 5.3) { s.dir = -1; s.hold = 2 + Math.random() * 5; }
+      if (s.y < 1.15) { s.dir = 1; s.hold = 2 + Math.random() * 5; }
+      s.g.position.set(s.x, s.y, -2.5);
+      s.g.rotation.z = 0.18 + Math.sin(t * 0.8 + s.ph) * 0.05;
+    }
+    // plant pearling: oxygen bubbles off leaves under strong light
+    if (dl > 0.45) for (const a of this.plantAnchors) if (Math.random() < dt * 0.5)
+      this.emitBubble(a.x + (Math.random() - 0.5) * 0.8, 0.95 + Math.random() * 0.4, a.z + (Math.random() - 0.5) * 0.6);
     this.detMat.opacity = murk * 0.55;
     const dPos = this.detPts.geometry.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < dPos.count; i++) {
