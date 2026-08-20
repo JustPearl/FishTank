@@ -169,7 +169,6 @@ export const SPECIES: SpeciesDef[] = [
 
 export interface UpgradeDef {
   id: string; name: string; desc: string; cost: number; icon: "filter" | "tank" | "ad" | "feeder" | "decor";
-  repeat?: number; // max purchases
   decor?: "wood" | "rocks" | "plants" | "aircurtain" | "lightbar" | "rowboat" | "pebbles";
 }
 

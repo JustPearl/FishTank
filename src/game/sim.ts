@@ -369,7 +369,10 @@ export class Sim {
     if (d.dirt) this.dirt = clamp(this.dirt + d.dirt, 0, 100);
     if (d.rep) this.rep = clamp(this.rep + d.rep, 0, 100);
     if (d.oxygen) this.oxygen = clamp(this.oxygen + d.oxygen, 0, 100);
-    if (d.visitors) this.visitors = Math.max(0, Math.min(40, this.visitors + d.visitors));
+    if (d.visitors) {
+      this.visitors = Math.max(0, Math.min(40, this.visitors + d.visitors));
+      this.stats.peakVisitors = Math.max(this.stats.peakVisitors, this.visitors);
+    }
     if (d.shake) this.engine.shake(d.shake);
     this.engine.setDirt(this.dirt);
     this.engine.setOxygen(this.oxygen);

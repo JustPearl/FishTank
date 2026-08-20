@@ -38,7 +38,7 @@ interface FishV {
   id: string; def: SpeciesDef; rig: FishRig;
   pos: THREE.Vector3; vel: THREE.Vector3; yaw: number; phase: number;
   target: THREE.Vector3; retarget: number; dashT: number; dashCool: number;
-  spawnT: number; floatT: number;
+  floatT: number;
   mode: number;            // 0 cruise · 1 graze · 2 hover
   modeT: number;
   bobPh: number;
@@ -973,7 +973,7 @@ export class Engine {
     const fv: FishV = {
       id, def, rig, pos, vel: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0, 0),
       yaw: Math.random() * Math.PI * 2, phase: Math.random() * 9,
-      target: pos.clone(), retarget: 0, dashT: 0, dashCool: 3 + Math.random() * 5, spawnT: 0, floatT: 0,
+      target: pos.clone(), retarget: 0, dashT: 0, dashCool: 3 + Math.random() * 5, floatT: 0,
       mode: 0, modeT: Math.random() * 2, bobPh: Math.random() * 9,
       flickCool: 1 + Math.random() * 3, flickT: 0,
       startleT: 0, startleDir: new THREE.Vector3(), sandCool: 1, wanderYaw: 0,
@@ -981,7 +981,6 @@ export class Engine {
       chaseT: 0, chaseCool: 2 + Math.random() * 4, chaseId: "",
     };
     this.fishes.push(fv);
-    rig.group.scale.setScalar(scale);
     this.spawnBurst(pos, 10);
     this.scaleTarget.set(id, scale);
     this.spawnAnim.set(id, 0);
