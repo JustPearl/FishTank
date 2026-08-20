@@ -46,7 +46,7 @@ export class Engine {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
-  private clock = new THREE.Clock();
+  private timer = new THREE.Timer();
   private raf = 0;
   private container: HTMLElement | null = null;
   private ro: ResizeObserver | null = null;
@@ -100,7 +100,6 @@ export class Engine {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
@@ -118,10 +117,10 @@ export class Engine {
     this.ro.observe(container);
     this.resize();
 
-    this.clock.start();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
-      const dt = Math.min(0.05, this.clock.getDelta());
+      this.timer.update();
+      const dt = Math.min(0.05, this.timer.getDelta());
       if (!this.paused) { this.t += dt; this.update(dt); }
       this.renderer.render(this.scene, this.camera);
     };
@@ -138,7 +137,7 @@ export class Engine {
   }
 
   bindSim(b: SimBridge) { this.bridge = b; }
-  setPaused(p: boolean) { this.paused = p; this.clock.getDelta(); }
+  setPaused(p: boolean) { this.paused = p; this.timer.update(); }
   setDirt(d: number) { this.dirt = d; }
   setDaylight(d: number) { this.daylight = d; }
   setOxygen(o: number) { this.oxygen = o; }
