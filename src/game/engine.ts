@@ -908,9 +908,13 @@ export class Engine {
       bPos[i * 3 + 1] = -10;
     }
     const bGeo = new THREE.BufferGeometry();
-    bGeo.setAttribute("position", new THREE.BufferAttribute(bPos, 3));
+    const bAttr = new THREE.BufferAttribute(bPos, 3);
+    bAttr.setUsage(THREE.DynamicDrawUsage);
+    bGeo.setAttribute("position", bAttr);
     this.bubbleMat = new THREE.PointsMaterial({ map: tex, color: "#e6f9f1", size: 0.11, transparent: true, opacity: 0.85, depthWrite: false });
     this.bubblePts = new THREE.Points(bGeo, this.bubbleMat);
+    // points move in-place — never let a stale bounding sphere cull the system
+    this.bubblePts.frustumCulled = false;
     this.scene.add(this.bubblePts);
     // detritus
     const M = 80;
@@ -921,9 +925,12 @@ export class Engine {
       this.detBase[i * 3 + 2] = (Math.random() - 0.5) * 4.4;
     }
     const dGeo = new THREE.BufferGeometry();
-    dGeo.setAttribute("position", new THREE.BufferAttribute(this.detBase.slice(), 3));
+    const dAttr = new THREE.BufferAttribute(this.detBase.slice(), 3);
+    dAttr.setUsage(THREE.DynamicDrawUsage);
+    dGeo.setAttribute("position", dAttr);
     this.detMat = new THREE.PointsMaterial({ map: tex, color: "#39503a", size: 0.07, transparent: true, opacity: 0, depthWrite: false });
     this.detPts = new THREE.Points(dGeo, this.detMat);
+    this.detPts.frustumCulled = false;
     this.scene.add(this.detPts);
     // ever-present fine motes for volumetric depth
     const K = 130;
@@ -934,9 +941,12 @@ export class Engine {
       this.moteBase[i * 3 + 2] = (Math.random() - 0.5) * 4.6;
     }
     const mGeo = new THREE.BufferGeometry();
-    mGeo.setAttribute("position", new THREE.BufferAttribute(this.moteBase.slice(), 3));
-    this.moteMat = new THREE.PointsMaterial({ map: tex, color: "#cfe8df", size: 0.045, transparent: true, opacity: 0.15, depthWrite: false });
+    const mAttr = new THREE.BufferAttribute(this.moteBase.slice(), 3);
+    mAttr.setUsage(THREE.DynamicDrawUsage);
+    mGeo.setAttribute("position", mAttr);
+    this.moteMat = new THREE.PointsMaterial({ map: tex, color: "#d5ece2", size: 0.05, transparent: true, opacity: 0.3, depthWrite: false });
     this.motePts = new THREE.Points(mGeo, this.moteMat);
+    this.motePts.frustumCulled = false;
     this.scene.add(this.motePts);
   }
 
