@@ -3,6 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      /* The preview host doesn't proxy Vite's HMR websocket; silence that dev-only noise
+         before the injected client runs. Has no effect in the production build. */
+      (function () {
+        function noisy(a) {
+          try {
+            var s = a && (a.message || a.stack) ? String(a.message || "") + String(a.stack || "") : String(a);
+            return /websocket|\/@vite\/client/i.test(s);
+          } catch (e) { return false; }
+        }
+        var ce = console.error, cw = console.warn;
+        console.error = function () {
+          for (var i = 0; i < arguments.length; i++) if (noisy(arguments[i])) return;
+          ce.apply(console, arguments);
+        };
+        console.warn = function () {
+          for (var i = 0; i < arguments.length; i++) if (noisy(arguments[i])) return;
+          cw.apply(console, arguments);
+        };
+        window.addEventListener("unhandledrejection", function (e) { if (noisy(e.reason)) e.preventDefault(); });
+        window.addEventListener("error", function (e) { if (noisy(e.error)) e.preventDefault(); });
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Greyline Aquarium — Coldwater Tycoon</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
