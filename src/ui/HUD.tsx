@@ -63,6 +63,18 @@ export const I = {
   moon: (c = "currentColor") => (
     <svg viewBox="0 0 24 24" fill={c} className="w-full h-full"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z" /></svg>
   ),
+  alert: (c = "currentColor") => (
+    <svg viewBox="0 0 24 24" fill={c} className="w-full h-full"><path d="M12 3l10 18H2L12 3zm-1 7v5h2v-5h-2zm0 7v2h2v-2h-2z" /></svg>
+  ),
+  gift: (c = "currentColor") => (
+    <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" className="w-full h-full"><rect x="4" y="9" width="16" height="11" rx="1" /><path d="M4 9h16M12 9v11M12 9c-3 0-5-1.5-5-3.5S9 3 10.5 4 12 9 12 9zm0 0c3 0 5-1.5 5-3.5S15 3 13.5 4 12 9 12 9z" /></svg>
+  ),
+  leaf: (c = "currentColor") => (
+    <svg viewBox="0 0 24 24" fill={c} className="w-full h-full"><path d="M5 19c0-8 5-14 14-14 0 9-6 14-12 14 0 0-1-4-2-6 1 3 1 6 0 6z" /></svg>
+  ),
+  wrench: (c = "currentColor") => (
+    <svg viewBox="0 0 24 24" fill={c} className="w-full h-full"><path d="M21 6.5a5 5 0 01-6.6 4.7L7 18.6a2.1 2.1 0 01-3-3l7.4-7.4A5 5 0 0117.5 2l-2.8 2.8 2.5 2.5L20 4.5c.6.6 1 1.3 1 2z" /></svg>
+  ),
 };
 
 function Chip({ label, children, accent }: { label: string; children: ReactNode; accent?: string }) {
@@ -99,6 +111,7 @@ export interface HudProps {
   onZoom: (d: number) => void;
   onCloseInspect: () => void; onToggleFocus: (id: string) => void;
   onFeedFish: (id: string) => void; onSellFish: (id: string) => void;
+  onEventChoice: (c: 0 | 1) => void;
 }
 
 export function Hud(p: HudProps) {
@@ -219,6 +232,7 @@ export function Hud(p: HudProps) {
             <div>
               <div className="text-[9px] tracking-[0.2em] text-dim uppercase mb-1.5">Tank vitals</div>
               <Bar label="Water quality" value={100 - s.dirt} hue={(100 - s.dirt) * 1.15} right={`${Math.round(100 - s.dirt)}%`} />
+              <Bar label="Dissolved O₂" value={s.oxygen} hue={s.oxygen < 30 ? 0 : s.oxygen * 1.9} right={`${Math.round(s.oxygen)}%`} />
               <Bar label="Shoal satiety" value={100 - s.avgHunger} hue={(100 - s.avgHunger) * 1.15} right={`${Math.round(100 - s.avgHunger)}%`} />
               <Bar label="Bioload" value={(s.bioload / s.cap) * 100} hue={60 - (s.bioload / s.cap) * 60} right={`${s.bioload}/${s.cap}`} />
             </div>
@@ -320,7 +334,45 @@ export function Hud(p: HudProps) {
         <span><b className="text-cyan2/80">C</b> clean</span>
         <span><b className="text-cyan2/80">P</b> pause</span>
       </div>
+
+      {s.activeEvent && (
+        <EventModal event={s.activeEvent} countdown={s.eventCountdown} onChoice={p.onEventChoice} />
+      )}
     </>
+  );
+}
+
+function EventModal({ event, countdown, onChoice }: { event: NonNullable<Snapshot["activeEvent"]>; countdown: number; onChoice: (c: 0 | 1) => void }) {
+  const icon = event.icon === "gift" ? I.gift : event.icon === "leaf" ? I.leaf : event.icon === "wrench" ? I.wrench : event.icon === "star" ? I.star : event.icon === "person" ? I.person : I.alert;
+  const urgent = event.icon === "alert" || event.icon === "wrench";
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#02090ccc] toast-in">
+      <div className="w-[380px] max-w-[92vw] rounded-[6px] border border-line bg-panel shadow-[0_18px_50px_rgba(0,0,0,0.6)] overflow-hidden">
+        <div className={"flex items-center gap-2.5 px-4 py-2.5 border-b border-line " + (urgent ? "bg-[#3d2430]" : "bg-[#0d3140]")}>
+          <span className={"w-5 h-5 shrink-0 " + (urgent ? "text-coral2" : "text-cyan2")}>{icon()}</span>
+          <span className="font-disp font-extrabold text-[15px] tracking-wide text-ink2">{event.title}</span>
+          <span className="ml-auto text-[10px] tabular-nums text-dim">auto in {Math.max(0, Math.ceil(countdown))}s</span>
+        </div>
+        <p className="px-4 pt-3 text-[12.5px] leading-relaxed text-ink2/90">{event.desc}</p>
+        <div className="p-4 pt-3 grid gap-2">
+          {event.choices.map((c, i) => (
+            <button key={i} onClick={() => onChoice(i as 0 | 1)}
+              className={"text-left px-3 py-2.5 rounded-[4px] border transition-all active:translate-y-px " +
+                (i === 0 ? "border-amber2/60 bg-amber2/8 hover:bg-amber2/18" : "border-line bg-[#082833] hover:bg-[#0d3442]")}>
+              <span className={"block font-disp font-bold text-[12.5px] tracking-wide " + (i === 0 ? "text-amber2" : "text-cyan2")}>{c.label}</span>
+              <span className="block text-[10.5px] text-dim mt-0.5">
+                {c.delta.cash ? (c.delta.cash > 0 ? `+$${c.delta.cash}` : `−$${-c.delta.cash}`) : ""}
+                {c.delta.dirt ? ` · dirt ${c.delta.dirt > 0 ? "+" : ""}${c.delta.dirt}` : ""}
+                {c.delta.rep ? ` · rep ${c.delta.rep > 0 ? "+" : ""}${c.delta.rep}` : ""}
+                {c.delta.oxygen ? ` · O₂ ${c.delta.oxygen > 0 ? "+" : ""}${c.delta.oxygen}` : ""}
+                {c.delta.visitors ? ` · visitors +${c.delta.visitors}` : ""}
+                {!c.delta.cash && !c.delta.dirt && !c.delta.rep && !c.delta.oxygen && !c.delta.visitors ? "no immediate effect" : ""}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

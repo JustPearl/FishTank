@@ -63,5 +63,6 @@ export const sfx = {
   milestone: () => { [523, 659, 784, 1047].forEach((f, i) => tone("triangle", f, f, 0.16, 0.3, i * 0.09)); },
   win: () => { [392, 523, 659, 784, 1047, 1319].forEach((f, i) => tone("triangle", f, f, 0.22, 0.3, i * 0.12)); },
   die: () => tone("sine", 240, 90, 0.5, 0.4),
+  warn: () => { tone("square", 330, 330, 0.09, 0.1, 0); tone("square", 247, 247, 0.14, 0.1, 0.11); },
   bubble: () => tone("sine", 700 + Math.random() * 400, 900, 0.04, 0.05),
 };

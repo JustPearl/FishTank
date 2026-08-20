@@ -82,6 +82,8 @@ export class Engine {
   private pelMat = new THREE.MeshStandardMaterial({ color: "#7a5a34", roughness: 0.9 });
   private aeratorPos = new THREE.Vector3(7.4, 0.75, -1.4);
   private bubbleAcc = 0;
+  private oxygen = 90;
+  private decorBubblers: THREE.Vector3[] = [];
 
   onFrame: ((dt: number) => void) | null = null;
   onWaterClick: ((x: number, y: number) => void) | null = null;
@@ -136,13 +138,14 @@ export class Engine {
   setPaused(p: boolean) { this.paused = p; this.clock.getDelta(); }
   setDirt(d: number) { this.dirt = d; }
   setDaylight(d: number) { this.daylight = d; }
+  setOxygen(o: number) { this.oxygen = o; }
   shake(amp: number) { this.shakeT = 1; this.shakeAmp = Math.max(this.shakeAmp, amp); }
 
   clearDynamic() {
     for (const f of this.fishes) this.scene.remove(f.rig.group);
     for (const p of this.pellets) this.scene.remove(p.mesh);
     for (const d of this.decors) this.scene.remove(d);
-    this.fishes = []; this.pellets = []; this.decors = [];
+    this.fishes = []; this.pellets = []; this.decors = []; this.decorBubblers = [];
     this.leafSwayers = this.leafSwayers.slice(0, this.persistSway);
     this.focusId = null;
     this.pan.set(0, 3.35, 0);
@@ -370,9 +373,71 @@ export class Engine {
     if (!persist) this.decors.push(g);
   }
 
-  addDecor(kind: "wood" | "rocks" | "plants") {
+  addDecor(kind: "wood" | "rocks" | "plants" | "aircurtain" | "lightbar" | "rowboat" | "pebbles") {
     if (kind === "rocks") { this.spawnRocks(0.5, 3); return; }
     if (kind === "plants") { this.spawnPlantClump(-2.8, -1.5, 10, 3.1); this.spawnPlantClump(3.2, 1.2, 7, 2.2); return; }
+    if (kind === "aircurtain") {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.6, 8),
+        new THREE.MeshStandardMaterial({ color: "#3a5a60", roughness: 0.5, metalness: 0.4 }));
+      bar.rotation.x = Math.PI / 2;
+      bar.position.set(-3.4, TANK.y0 + 0.12, 0);
+      const g = new THREE.Group(); g.add(bar);
+      this.scene.add(g); this.decors.push(g);
+      for (let i = 0; i < 5; i++) this.decorBubblers.push(new THREE.Vector3(-3.4, TANK.y0 + 0.2, -1.4 + i * 0.7));
+      return;
+    }
+    if (kind === "lightbar") {
+      const g = new THREE.Group();
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(10, 0.22, 0.5),
+        new THREE.MeshStandardMaterial({ color: "#20343c", roughness: 0.4, metalness: 0.6 }));
+      housing.position.set(0, 6.75, 2.3);
+      g.add(housing);
+      const cone = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 5.4, 6.4, 20, 1, true),
+        new THREE.MeshBasicMaterial({ color: "#cfe9e2", transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      cone.position.set(0, 3.5, 1.2);
+      g.add(cone);
+      const glow = new THREE.PointLight("#d8efe6", 0.55, 22);
+      glow.position.set(0, 6.2, 1.6);
+      g.add(glow);
+      this.scene.add(g); this.decors.push(g);
+      return;
+    }
+    if (kind === "rowboat") {
+      const g = new THREE.Group();
+      const woodMat = new THREE.MeshStandardMaterial({ color: "#5a4630", roughness: 0.9 });
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.9, 1.5), woodMat);
+      hull.position.set(0, 0.45, 0);
+      g.add(hull);
+      const rim = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.16, 1.6), new THREE.MeshStandardMaterial({ color: "#6d573c", roughness: 0.9 }));
+      rim.position.set(0, 0.95, 0);
+      g.add(rim);
+      for (const bx of [-1.2, 0, 1.2]) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 1.5), woodMat);
+        plank.position.set(bx, 1.0, 0);
+        g.add(plank);
+      }
+      g.position.set(2.4, TANK.y0 - 0.15, -0.8);
+      g.rotation.set(0.08, 0.5, 0.14);
+      g.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
+      this.scene.add(g); this.decors.push(g);
+      return;
+    }
+    if (kind === "pebbles") {
+      const g = new THREE.Group();
+      const cols = ["#7d7468", "#8a8072", "#6e6a5e", "#94897a", "#5f5b50"];
+      for (let i = 0; i < 40; i++) {
+        const r = 0.07 + Math.random() * 0.13;
+        const peb = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6),
+          new THREE.MeshStandardMaterial({ color: cols[i % cols.length], roughness: 0.85, flatShading: true }));
+        peb.scale.set(1 + Math.random() * 0.4, 0.55 + Math.random() * 0.25, 1 + Math.random() * 0.4);
+        peb.position.set((Math.random() - 0.5) * 11, TANK.y0 + r * 0.35, (Math.random() - 0.5) * 3.4);
+        peb.rotation.y = Math.random() * Math.PI;
+        g.add(peb);
+      }
+      this.scene.add(g); this.decors.push(g);
+      return;
+    }
+    // driftwood
     const g = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: "#4d3a28", roughness: 0.95 });
     const mk = (r: number, len: number, x: number, y: number, z: number, rz: number, ry: number) => {
@@ -508,6 +573,8 @@ export class Engine {
     // bubbles
     this.bubbleAcc += dt * 7;
     while (this.bubbleAcc > 1) { this.bubbleAcc--; this.emitBubble(this.aeratorPos.x, this.aeratorPos.y, this.aeratorPos.z); }
+    for (const b of this.decorBubblers) if (Math.random() < dt * 9) this.emitBubble(b.x, b.y, b.z);
+    if (this.oxygen < 32) for (const f of this.fishes) if (Math.random() < dt * 2.2) this.emitBubble(f.pos.x, f.pos.y + 0.15, f.pos.z);
     const bPos = this.bubblePts.geometry.attributes.position as THREE.BufferAttribute;
     this.bubbleData.forEach((b, i) => {
       if (!b.act) return;

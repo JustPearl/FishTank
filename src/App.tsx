@@ -7,9 +7,9 @@ import { MenuScreen, PauseScreen, OverScreen, WinScreen } from "./ui/Overlays";
 
 const INITIAL: Snapshot = {
   phase: "menu", cash: 120, income: 0, visitors: 0, rep: 46, day: 1, clock: "08:00", night: false,
-  dirt: 8, avgHunger: 0, bioload: 0, cap: 10, fishCount: 0, fish: [], speciesCount: {}, owned: [], claimed: [],
-  cleanCd: 0, bankruptWarn: 0, toasts: [],
-  stats: { pellets: 0, cleans: 0, earned: 0, deaths: 0, peakVisitors: 0, fishAdded: 0 },
+  dirt: 8, oxygen: 90, avgHunger: 0, bioload: 0, cap: 10, fishCount: 0, fish: [], speciesCount: {}, owned: [], claimed: [],
+  cleanCd: 0, bankruptWarn: 0, activeEvent: null, eventCountdown: 0, toasts: [],
+  stats: { pellets: 0, cleans: 0, earned: 0, deaths: 0, peakVisitors: 0, fishAdded: 0, eventsResolved: 0 },
   muted: false,
 };
 
@@ -127,6 +127,7 @@ export default function App() {
             setInspectId(null);
             if (focusId === id) { engine?.focusFish(null); setFocusId(null); }
           }}
+          onEventChoice={(c) => sim.resolveEvent(c)}
         />
       )}
 

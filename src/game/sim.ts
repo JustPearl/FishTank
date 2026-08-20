@@ -1,6 +1,8 @@
 import {
   SPECIES, UPGRADES, MILESTONES, DAY_LENGTH, ADMISSION_BASE,
   FEED_BTN_COST, FEED_CLICK_COST, CLEAN_COST, CLEAN_COOLDOWN,
+  EVENT_DEFS, O2_LOW, O2_BASE_AERATION, O2_CONSUMPTION_PER_LOAD,
+  type EventDef,
 } from "./data";
 import type { Engine } from "./engine";
 import { sfx } from "./audio";
@@ -14,12 +16,13 @@ export interface Snapshot {
   phase: Phase;
   cash: number; income: number; visitors: number; rep: number;
   day: number; clock: string; night: boolean;
-  dirt: number; avgHunger: number; bioload: number; cap: number;
+  dirt: number; oxygen: number; avgHunger: number; bioload: number; cap: number;
   fishCount: number; fish: FishView[]; speciesCount: Record<string, number>;
   owned: string[]; claimed: string[];
   cleanCd: number; bankruptWarn: number;
+  activeEvent: EventDef | null; eventCountdown: number;
   toasts: Toast[];
-  stats: { pellets: number; cleans: number; earned: number; deaths: number; peakVisitors: number; fishAdded: number };
+  stats: { pellets: number; cleans: number; earned: number; deaths: number; peakVisitors: number; fishAdded: number; eventsResolved: number };
   muted: boolean;
 }
 
@@ -33,6 +36,7 @@ export class Sim {
   private fishes: FishRecord[] = [];
   private cash = 120;
   private dirt = 8;
+  private oxygen = 90;
   private rep = 46;
   private time = 0;
   private visitors = 0;
@@ -45,8 +49,11 @@ export class Sim {
   private bankruptT = 0;
   private incomeSamples: { t: number; amt: number }[] = [];
   private wonShown = false;
+  private activeEvent: EventDef | null = null;
+  private eventTimer = 24;
+  private eventCountdown = 0;
   muted = false;
-  stats = { pellets: 0, cleans: 0, earned: 0, deaths: 0, peakVisitors: 0, fishAdded: 0 };
+  stats = { pellets: 0, cleans: 0, earned: 0, deaths: 0, peakVisitors: 0, fishAdded: 0, eventsResolved: 0 };
 
   constructor(engine: Engine) {
     this.engine = engine;
@@ -78,14 +85,16 @@ export class Sim {
   reset() {
     this.engine.clearDynamic();
     this.engine.setPaused(false);
-    this.fishes = []; this.cash = 120; this.dirt = 8; this.rep = 46; this.time = 0;
+    this.fishes = []; this.cash = 120; this.dirt = 8; this.oxygen = 90; this.rep = 46; this.time = 0;
     this.visitors = 0; this.arrAcc = 0; this.depAcc = 0;
     this.owned = new Set(); this.claimed = new Set(); this.toasts = [];
     this.cleanCd = 0; this.lastAuto = -99; this.bankruptT = 0; this.incomeSamples = [];
     this.wonShown = false;
-    this.stats = { pellets: 0, cleans: 0, earned: 0, deaths: 0, peakVisitors: 0, fishAdded: 0 };
+    this.activeEvent = null; this.eventTimer = 24; this.eventCountdown = 0;
+    this.stats = { pellets: 0, cleans: 0, earned: 0, deaths: 0, peakVisitors: 0, fishAdded: 0, eventsResolved: 0 };
     this.phase = "playing";
     this.engine.setDirt(this.dirt);
+    this.engine.setOxygen(this.oxygen);
     this.toast("info", "Fresh water, fresh start.");
   }
 
@@ -200,6 +209,12 @@ export class Sim {
 
   // ── economy tick ──────────────────────────────────────────────────────────
   private step(dt: number) {
+    // while an event is up, the economy waits on your decision
+    if (this.activeEvent) {
+      this.eventCountdown -= dt;
+      if (this.eventCountdown <= 0) this.resolveEvent(1);
+      return;
+    }
     this.time += dt;
     this.cleanCd = Math.max(0, this.cleanCd - dt);
     const ph = (this.time % DAY_LENGTH) / DAY_LENGTH;
@@ -208,8 +223,15 @@ export class Sim {
 
     // water quality
     const filter = this.owned.has("filter3") ? 0.22 : this.owned.has("filter2") ? 0.13 : 0.05;
-    this.dirt = clamp(this.dirt + (0.01 + this.bioload * 0.005 - filter) * dt, 0, 100);
+    const uvMul = this.owned.has("uv") ? 0.6 : 1;
+    this.dirt = clamp(this.dirt + (0.01 + this.bioload * 0.005 - filter) * uvMul * dt, 0, 100);
     this.engine.setDirt(this.dirt);
+
+    // dissolved oxygen
+    const aeration = O2_BASE_AERATION + (this.owned.has("aircurtain") ? 1.6 : 0) + (this.owned.has("plants") ? 0.4 : 0);
+    const consumption = 0.35 + this.bioload * O2_CONSUMPTION_PER_LOAD;
+    this.oxygen = clamp(this.oxygen + (aeration - consumption) * dt, 0, 100);
+    this.engine.setOxygen(this.oxygen);
 
     // fish vitals
     const alive = this.fishes.filter((f) => !f.dead);
@@ -218,7 +240,8 @@ export class Sim {
       f.hunger = clamp(f.hunger + (0.7 + f.scale * 0.55) * dt, 0, 100);
       if (f.hunger >= 99.5) f.health -= 3.6 * dt;
       if (this.dirt > 65) f.health -= (this.dirt - 65) * 0.055 * dt;
-      if (f.hunger < 80 && this.dirt < 72) f.health += 2.6 * dt;
+      if (this.oxygen < O2_LOW) f.health -= (O2_LOW - this.oxygen) * 0.12 * dt;
+      if (f.hunger < 80 && this.dirt < 72 && this.oxygen >= O2_LOW) f.health += 2.6 * dt;
       f.health = clamp(f.health, 0, 100);
       if (f.hunger < 85) f.scale = Math.min(1, f.scale + def.growth * dt * (1.15 - f.hunger / 120));
       if (f.health <= 0) {
@@ -238,14 +261,14 @@ export class Sim {
     const appeal = alive.reduce((s, f) => {
       const d = SPECIES.find((x) => x.id === f.speciesId)!;
       return s + d.appeal * (0.45 + 0.55 * f.scale);
-    }, 0) + (this.owned.has("wood") ? 2 : 0) + (this.owned.has("rocks") ? 3 : 0) + (this.owned.has("plants") ? 5 : 0);
+    }, 0) + this.decorAppeal;
 
     // satisfaction → reputation
     const sat = clamp(52 + (55 - this.dirt) * 0.65 + (avgHealth - 60) * 0.35 + variety * 3.5, 4, 100);
     this.rep = clamp(this.rep + (sat - this.rep) * Math.min(1, dt * 0.022), 0, 100);
 
     // visitors
-    const marketing = (this.owned.has("ad1") ? 1.3 : 1) * (this.owned.has("ad2") ? 1.3 : 1);
+    const marketing = (this.owned.has("ad1") ? 1.3 : 1) * (this.owned.has("ad2") ? 1.3 : 1) * (this.owned.has("lightbar") ? 1.1 : 1);
     const target = Math.round((appeal * 0.55 + 0.7) * (0.45 + (this.rep / 100) * 0.9) * marketing * (0.25 + 0.75 * daylight));
     this.arrAcc += (target / 26) * dt;
     while (this.arrAcc >= 1) {
@@ -267,6 +290,13 @@ export class Sim {
       sfx.plop();
     }
 
+    // random events
+    this.eventTimer -= dt;
+    if (this.eventTimer <= 0 && this.time > 20) {
+      this.eventTimer = 26 + Math.random() * 26;
+      this.triggerEvent();
+    }
+
     // bankruptcy
     if (alive.length === 0 && this.cash < 18) {
       this.bankruptT += dt;
@@ -282,6 +312,51 @@ export class Sim {
     this.checkMilestones();
   }
 
+  get decorCount() {
+    let n = 0;
+    for (const u of UPGRADES) if (u.decor && this.owned.has(u.id)) n++;
+    return n;
+  }
+  get decorAppeal() {
+    let a = 0;
+    for (const u of UPGRADES) if (u.decor && this.owned.has(u.id)) a += u.id === "plants" ? 5 : u.id === "rowboat" ? 4 : u.id === "rocks" || u.id === "aircurtain" ? 3 : 2;
+    return a;
+  }
+
+  private triggerEvent() {
+    const day = Math.floor(this.time / DAY_LENGTH) + 1;
+    const pool = EVENT_DEFS.filter((e) => !e.minDay || day >= e.minDay);
+    if (!pool.length) return;
+    let total = 0;
+    for (const e of pool) total += e.weight;
+    let r = Math.random() * total;
+    let pick = pool[0];
+    for (const e of pool) { r -= e.weight; if (r <= 0) { pick = e; break; } }
+    this.activeEvent = pick;
+    this.eventCountdown = 18;
+    sfx.warn();
+    this.engine.shake(0.1);
+  }
+
+  resolveEvent(choice: 0 | 1) {
+    const ev = this.activeEvent;
+    if (!ev) return;
+    const c = ev.choices[choice];
+    const d = c.delta;
+    if (d.cash) this.cash = Math.max(0, this.cash + d.cash);
+    if (d.dirt) this.dirt = clamp(this.dirt + d.dirt, 0, 100);
+    if (d.rep) this.rep = clamp(this.rep + d.rep, 0, 100);
+    if (d.oxygen) this.oxygen = clamp(this.oxygen + d.oxygen, 0, 100);
+    if (d.visitors) this.visitors = Math.max(0, Math.min(40, this.visitors + d.visitors));
+    if (d.shake) this.engine.shake(d.shake);
+    this.engine.setDirt(this.dirt);
+    this.engine.setOxygen(this.oxygen);
+    this.stats.eventsResolved++;
+    this.activeEvent = null;
+    this.toast(d.cash && d.cash > 0 ? "money" : d.rep && d.rep > 0 ? "good" : "info", c.msg);
+    sfx.ui();
+  }
+
   private checkMilestones() {
     const variety = new Set(this.fishes.filter((f) => !f.dead).map((f) => f.speciesId)).size;
     const conds: Record<string, boolean> = {
@@ -294,6 +369,12 @@ export class Sim {
       sp5: variety >= 5,
       house: this.bioload >= 20,
       tycoon: this.cash >= 1500,
+      decor1: this.decorCount >= 1,
+      decor3: this.decorCount >= 3,
+      event1: this.stats.eventsResolved >= 1,
+      aerate: this.owned.has("aircurtain"),
+      week: Math.floor(this.time / DAY_LENGTH) + 1 >= 5,
+      earn2k: this.stats.earned >= 2000,
     };
     for (const m of MILESTONES) {
       if (!this.claimed.has(m.id) && conds[m.id]) {
@@ -326,9 +407,10 @@ export class Sim {
       day: Math.floor(this.time / DAY_LENGTH) + 1,
       clock: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
       night: ph > 0.82 || ph < 0.04,
-      dirt: this.dirt,
+      dirt: this.dirt, oxygen: this.oxygen,
       avgHunger: alive.length ? alive.reduce((s, f) => s + f.hunger, 0) / alive.length : 0,
       bioload: this.bioload, cap: this.cap,
+      activeEvent: this.activeEvent, eventCountdown: this.eventCountdown,
       fishCount: alive.length,
       fish: alive.map((f) => ({ id: f.id, speciesId: f.speciesId, hunger: f.hunger, health: f.health, scale: f.scale })),
       speciesCount,

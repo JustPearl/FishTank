@@ -170,7 +170,7 @@ export const SPECIES: SpeciesDef[] = [
 export interface UpgradeDef {
   id: string; name: string; desc: string; cost: number; icon: "filter" | "tank" | "ad" | "feeder" | "decor";
   repeat?: number; // max purchases
-  decor?: "wood" | "rocks" | "plants";
+  decor?: "wood" | "rocks" | "plants" | "aircurtain" | "lightbar" | "rowboat" | "pebbles";
 }
 
 export const UPGRADES: UpgradeDef[] = [
@@ -181,9 +181,14 @@ export const UPGRADES: UpgradeDef[] = [
   { id: "ad1", name: "Local Ads", desc: "+30% visitor flow.", cost: 120, icon: "ad" },
   { id: "ad2", name: "TV Feature", desc: "A further +30% visitor flow.", cost: 320, icon: "ad" },
   { id: "feeder", name: "Auto-Feeder", desc: "Sprinkles flakes when the shoal pecks 60% hungry.", cost: 210, icon: "feeder" },
+  { id: "uv", name: "UV Sterilizer", desc: "Cuts waste buildup by 40%. Green-water killer.", cost: 190, icon: "filter" },
   { id: "wood", name: "Driftwood Arch", desc: "+2 appeal. A real piece, installed in-tank.", cost: 70, icon: "decor", decor: "wood" },
   { id: "rocks", name: "Rockscape", desc: "+3 appeal. Granite arrangement.", cost: 110, icon: "decor", decor: "rocks" },
-  { id: "plants", name: "Vallisneria Bed", desc: "+5 appeal. A living plant wall.", cost: 160, icon: "decor", decor: "plants" },
+  { id: "plants", name: "Vallisneria Bed", desc: "+5 appeal, +0.4 aeration. A living plant wall.", cost: 160, icon: "decor", decor: "plants" },
+  { id: "aircurtain", name: "Air Curtain", desc: "+3 appeal, +1.6 aeration. A shimmering bubble column.", cost: 140, icon: "decor", decor: "aircurtain" },
+  { id: "lightbar", name: "LED Light Bar", desc: "+2 appeal, +10% visitors. Warm showcase glow.", cost: 180, icon: "decor", decor: "lightbar" },
+  { id: "rowboat", name: "Sunken Dinghy", desc: "+4 appeal. A weathered wreck the shoal threads through.", cost: 240, icon: "decor", decor: "rowboat" },
+  { id: "pebbles", name: "River Pebble Bed", desc: "+2 appeal. Tumbled granite scatter.", cost: 90, icon: "decor", decor: "pebbles" },
 ];
 
 export interface MilestoneDef { id: string; name: string; desc: string; reward: number; }
@@ -198,7 +203,85 @@ export const MILESTONES: MilestoneDef[] = [
   { id: "sp5", name: "Coldwater Cabinet", desc: "House 5 species at once", reward: 130 },
   { id: "house", name: "Full House", desc: "Reach 20 bioload", reward: 170 },
   { id: "tycoon", name: "Aquarist Tycoon", desc: "Hold $1,500", reward: 220 },
+  { id: "decor1", name: "Interior Touch", desc: "Install a decoration", reward: 20 },
+  { id: "decor3", name: "Aquascaper", desc: "Install 3 decorations", reward: 60 },
+  { id: "event1", name: "Crisis Manager", desc: "Resolve a random event", reward: 30 },
+  { id: "aerate", name: "Well Aerated", desc: "Install the Air Curtain", reward: 40 },
+  { id: "week", name: "Open a Week", desc: "Reach day 5", reward: 80 },
+  { id: "earn2k", name: "Big Earner", desc: "Earn $2,000 total", reward: 150 },
 ];
+
+export interface EventDelta { cash?: number; dirt?: number; rep?: number; oxygen?: number; visitors?: number; shake?: number; }
+export interface EventChoice { label: string; msg: string; delta: EventDelta; }
+export interface EventDef {
+  id: string; title: string; desc: string;
+  icon: "alert" | "gift" | "leaf" | "wrench" | "star" | "person";
+  weight: number; minDay?: number;
+  choices: [EventChoice, EventChoice];
+}
+
+export const EVENT_DEFS: EventDef[] = [
+  {
+    id: "inspector", title: "Health Inspector", desc: "An inspector taps the glass and frowns at the water clarity. This could go badly.",
+    icon: "alert", weight: 3,
+    choices: [
+      { label: "Deep-clean on the spot", msg: "You scrubbed everything. The inspector nods.", delta: { cash: -25, dirt: -50, shake: 0.1 } },
+      { label: "Plead your case", msg: "The inspector left unimpressed.", delta: { rep: -14 } },
+    ],
+  },
+  {
+    id: "bloom", title: "Algae Bloom", desc: "Overnight the water has turned the colour of pea soup. Something must give.",
+    icon: "leaf", weight: 3,
+    choices: [
+      { label: "Dose algaecide", msg: "The bloom died back, but the water took a hit.", delta: { cash: -20, dirt: 12, oxygen: -12 } },
+      { label: "Ride it out", msg: "You gambled on nature. The murk thickened.", delta: { dirt: 34 } },
+    ],
+  },
+  {
+    id: "tour", title: "School Tour", desc: "A teacher herds two dozen kids toward the entrance. They are loud and sticky.",
+    icon: "person", weight: 3,
+    choices: [
+      { label: "Host the tour", msg: "The kids adored it. Word will spread.", delta: { visitors: 10, rep: 6 } },
+      { label: "Turn them away", msg: "You kept the peace and lost the crowd.", delta: { rep: -5 } },
+    ],
+  },
+  {
+    id: "donor", title: "Quiet Donor", desc: "A retired keeper offers a grant — no strings, just love of fish.",
+    icon: "gift", weight: 2,
+    choices: [
+      { label: "Accept the grant", msg: "A generous gift for the collection.", delta: { cash: 60 } },
+      { label: "Decline politely", msg: "Your independence impressed the society.", delta: { rep: 8 } },
+    ],
+  },
+  {
+    id: "media", title: "Local TV Crew", desc: "A camera crew wants to feature the gallery on the evening news.",
+    icon: "star", weight: 2, minDay: 2,
+    choices: [
+      { label: "Give the full tour", msg: "Prime-time fame — the crowds followed.", delta: { rep: 12, visitors: 8, dirt: 14 } },
+      { label: "No comment", msg: "You kept things low-key.", delta: {} },
+    ],
+  },
+  {
+    id: "filter", title: "Filter Rattle", desc: "The filtration unit is making a sound like gravel in a tin can.",
+    icon: "wrench", weight: 3,
+    choices: [
+      { label: "Emergency repair", msg: "Fixed before it failed. Money well spent.", delta: { cash: -40 } },
+      { label: "Kick it and hope", msg: "It held... barely. Waste piled up.", delta: { dirt: 38, oxygen: -8 } },
+    ],
+  },
+  {
+    id: "heat", title: "Heatwave", desc: "A warm snap is pushing the coldwater tank toward the danger zone.",
+    icon: "alert", weight: 2, minDay: 3,
+    choices: [
+      { label: "Buy ice blocks", msg: "The temperature held steady.", delta: { cash: -30, oxygen: 6 } },
+      { label: "Let it ride", msg: "The fish gasped at the surface.", delta: { oxygen: -22 } },
+    ],
+  },
+];
+
+export const O2_LOW = 30;          // below this, fish health suffers
+export const O2_BASE_AERATION = 1.1;
+export const O2_CONSUMPTION_PER_LOAD = 0.085;
 
 export const DAY_LENGTH = 75;      // seconds per in-game day
 export const ADMISSION_BASE = 3.6; // $ per visitor at rep 50
