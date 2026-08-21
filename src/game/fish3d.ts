@@ -40,22 +40,28 @@ function dims(def: SpeciesDef, t: number) {
   const A = def.anatomy;
   const H = def.L * def.HR, W = H * def.WR;
   const forehead = A.forehead ?? 0.5;
-  // snout reach as a fraction of body length — a real roach's snout is ~4% of
-  // its length, a pike's bill ~12%. The old formula ran 8–27%: gar noses on
-  // everything. sqrt() rounds the ramp into a bullet-nose instead of a cone.
-  const snL = 0.035 + (1 - forehead) * 0.035 + A.snout * 0.06;
-  const rise = Math.sqrt(sstep(0, snL, t));
+  // Snout reach, hard-capped: a real roach's snout is ~5–7% of body length,
+  // a pike's duckbill ~15%. Nothing else.
+  const snL = Math.min(0.15, 0.055 + (1 - forehead) * 0.05 + A.snout * 0.08);
+  // Ease-out rise: most of the head height is gained in the first half of the
+  // snout, so the face is steep and rounded — no needle, no club.
+  const xr = Math.min(1, t / snL);
+  const rise = 1 - (1 - xr) * (1 - xr);
+  const xw = Math.min(1, t / (snL * 0.85));
+  const riseW = 1 - (1 - xw) * (1 - xw);
   const duck = A.snoutFlat * 0.3 * (1 - sstep(0.03, snL * 1.6, t)); // pike: depressed skull roof
   const arch = A.hump * 0.55 * gauss(t, 0.36, 0.15);               // crucian/bream dorsal arch
   const taper = 1 - A.taperAmt * sstep(A.taperStart, A.taperEnd, t);
   const ped = 1 - 0.32 * gauss(t, 0.9, 0.018);                     // caudal peduncle wrist
-  const hF = Math.min(1.18, Math.max(0.05, (0.52 + 0.48 * rise + arch - duck) * taper * ped));
-  let wF = (0.5 + 0.5 * sstep(0, snL * 0.9, t))
+  // Tip is mouth-sized: ~12% of max depth / 25% of max width, reaching ~75%
+  // of head height halfway along the snout and full height at snL.
+  const hF = Math.min(1.22, Math.max(0.05, (0.12 + 0.83 * rise + arch - duck) * taper * ped));
+  let wF = (0.25 + 0.75 * riseW)
     * (1 + (A.headWide - 1) * 0.85 * (1 - sstep(0.06, 0.42, t)))   // catfish broad skull
     * (1 + 0.45 * A.snoutFlat * A.snout * (1 - sstep(0, snL * 1.2, t))) // duckbill flares wide-flat
     * taper * ped;
   wF = Math.max(0.045, wF);
-  const ventral = A.mouthVentral * 0.55 * (1 - sstep(0, 0.16, t))
+  const ventral = A.mouthVentral * 0.55 * (1 - sstep(0, snL, t))
     + A.snoutFlat * 0.25 * (1 - sstep(0, snL * 1.5, t));            // flat undersides
   const h = 0.5 * H * hF, w = 0.5 * W * wF;
   return { h, w, hF, ventral, yBot: -h * (1 - ventral * 0.5) };
