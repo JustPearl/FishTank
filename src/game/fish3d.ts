@@ -271,16 +271,17 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     // ── sculpt ──
     const forehead = A.forehead ?? 0.5;
     const snL = 0.06 + (1 - forehead) * 0.16 + A.snout * 0.1; // steep cyprinid face vs drawn-out pike snout
-    let sn = 0.3 + 0.7 * sstep(0, snL, t);                    // snout taper (radius fraction)
-    // rounded lip bulge at the very snout tip (blunt-snouted species)
-    sn *= 1 + 0.12 * (1 - A.snoutFlat) * Math.exp(-(((t - 0.02) ** 2) / (2 * 0.015 ** 2)));
+    const snBase = 0.3 + 0.14 * forehead - 0.04 * A.snout;    // blunt cyprinid tip vs pointed pike tip
+    const sn = snBase + (1 - snBase) * sstep(0, snL, t);      // snout taper (radius fraction)
+    // lip: push the front face FORWARD (never around the ring) — the lower lip leads
+    const lipG = Math.exp(-(((t - 0.015) ** 2) / (2 * 0.02 ** 2))) * (1 - A.snoutFlat * 0.85);
     const yCrush = 1 - A.snoutFlat * 0.55 * (1 - sstep(0, 0.3, t)); // pike duckbill flatten
     const tt = 1 - A.taperAmt * sstep(A.taperStart, A.taperEnd, t); // caudal taper
     const ped = 1 - 0.2 * Math.exp(-(((t - 0.885) ** 2) / (2 * 0.028 ** 2))); // caudal peduncle wrist
     const hd = 1 - (A.headWide - 1) * 0.32 * (1 - sstep(0, 0.3, t));
     const bump = A.hump * H * 0.55 * Math.exp(-((t - 0.32) ** 2) / (2 * 0.15 ** 2)) * (1 - sstep(0.82, 0.96, t));
 
-    const X = x * L;
+    const X = x * L + lipG * (yn < 0.15 ? 1 : 0.35) * 0.055 * L * sstep(0.32, 0.5, x);
     let Y = y * H * sn * tt * ped * yCrush * hd + bump * (yn > 0 ? yn : 0.12 * yn);
     // ventral mouth: flatten the underside of the snout (suction feeders)
     if (A.mouthVentral) Y *= 1 - A.mouthVentral * 0.4 * (1 - sstep(0, 0.15, t)) * (1 - sstep(-0.7, 0, yn));
@@ -296,6 +297,10 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     }
     // opercular bulge — the gill-plate ridge behind the eye (replaces a bolted-on mesh)
     Z += Math.sign(Z) * 0.045 * W * Math.exp(-(((X - 0.18 * L) ** 2) / (2 * (0.05 * L) ** 2))) * sstep(0.35, 0.72, Math.abs(Z) / halfWv) * (1 - sstep(0.3, 0.42, t));
+    // brow / preorbital ridge above the eye
+    Z += Math.sign(Z) * 0.032 * W * Math.exp(-(((X - exS) ** 2) / (2 * (0.035 * L) ** 2)) - (((Y - (eyS + 1.5 * eyeRl)) ** 2) / (2 * (0.8 * eyeRl) ** 2))) * sstep(0.3, 0.72, Math.abs(Z) / halfWv) * (1 - sstep(0.28, 0.4, t));
+    // cheek fullness below and behind the eye
+    Z += Math.sign(Z) * 0.03 * W * Math.exp(-(((X - (exS - 0.055 * L)) ** 2) / (2 * (0.06 * L) ** 2)) - (((Y - (eyS - 2.3 * eyeRl)) ** 2) / (2 * (1.7 * eyeRl) ** 2))) * sstep(0.3, 0.72, Math.abs(Z) / halfWv) * (1 - sstep(0.3, 0.42, t));
     pos.setXYZ(i, X, Y, Z);
 
     // ── color: countershading base ──
@@ -368,6 +373,24 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     const gill = Math.exp(-(((X - 0.26 * L) ** 2) / (2 * (0.06 * L) ** 2)));
     const sideAmt = Math.abs(Z) / Math.max(0.001, W * 0.5 * widthProfile(def, t) + 0.001);
     col.multiplyScalar(1 - 0.22 * gill * sstep(0.35, 0.9, sideAmt));
+    // mouth cleft — painted on the snout face (nothing to float), height follows mouthVentral
+    {
+      const mv = A.mouthVentral ?? 0.12;
+      const mouthYn = -0.1 - mv * 0.5; // terminal ≈ -0.16, ventral ≈ -0.35
+      const mG = Math.exp(-(((t - 0.018) ** 2) / (2 * 0.024 ** 2)))
+        * Math.exp(-(((yn - mouthYn) ** 2) / (2 * 0.13 ** 2)))
+        * (1 - sstep(0.45, 0.85, Math.abs(z * 2)));
+      col = mix(col, C("#141a1c"), mG * 0.9);
+      // slight upper-lip overhang shadow just above the cleft
+      col.multiplyScalar(1 - 0.1 * Math.exp(-(((yn - (mouthYn + 0.22)) ** 2) / (2 * 0.05 ** 2))) * (1 - sstep(0.06, 0.16, t)) * (1 - sstep(0.45, 0.85, Math.abs(z * 2))));
+    }
+    // bass maxilla plate — dark cheek streak running back from the gape
+    if (A.jawBig) {
+      const mxl = Math.exp(-(((t - 0.1) ** 2) / (2 * 0.03 ** 2)))
+        * sstep(-0.55, -0.3, yn) * (1 - sstep(-0.1, 0.05, yn))
+        * sstep(0.3, 0.75, sideAmt) * (1 - sstep(0.24, 0.34, t));
+      col = mix(col, C("#232b24"), mxl * 0.62);
+    }
     // sharp gill slit at the operculum's rear edge
     col.multiplyScalar(1 - 0.3 * Math.exp(-(((X - 0.235 * L) ** 2) / (2 * (0.011 * L) ** 2))) * sstep(0.4, 0.85, sideAmt) * (1 - sstep(0.32, 0.46, t)));
     // lateral line sheen
@@ -594,11 +617,7 @@ export function makeFish(def: SpeciesDef): FishRig {
 
   // the operculum is now sculpted into the body mesh (bulge + gill slit paint)
 
-  // mouth line
-  const mouthMat = new THREE.MeshStandardMaterial({ color: "#1c2226", roughness: 1 });
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(L * 0.05, H * 0.02, W * (isPikeish(A) ? 0.22 : 0.34)), mouthMat);
-  mouth.position.set(L * (0.44 + A.snout * 0.04), -H * (0.02 + A.mouthVentral * 0.14), 0);
-  group.add(mouth);
+  // mouth is painted into the snout vertex colors — no floating geometry
 
   // eyes — ball + species iris + pupil + wet cornea + catchlight
   // eyes: one textured sphere per side. Slightly larger than life so they
@@ -647,14 +666,7 @@ export function makeFish(def: SpeciesDef): FishRig {
     }
   }
 
-  // largemouth: maxilla reaching behind the eye
-  if (A.jawBig) {
-    const mouthMat2 = new THREE.MeshStandardMaterial({ color: "#2a3230", roughness: 0.9 });
-    const jaw = new THREE.Mesh(new THREE.BoxGeometry(L * 0.16, H * 0.018, W * 0.1), mouthMat2);
-    jaw.position.set(L * 0.3, -H * 0.16, 0);
-    jaw.rotation.z = 0.28;
-    group.add(jaw);
-  }
+  // bass maxilla is painted onto the cheek in the body shader — no bolted-on plate
 
   let dead = false;
   let pectPh = Math.random() * 6;
@@ -692,4 +704,4 @@ export function makeFish(def: SpeciesDef): FishRig {
   return { group, body, update, setDead, baseMat: bodyMat };
 }
 
-function isPikeish(A: SpeciesDef["anatomy"]) { return A.snout > 0.7; }
+
