@@ -136,6 +136,54 @@ function scaleTex(): THREE.CanvasTexture {
   return _scales;
 }
 
+// ── eye texture: sclera + iris + pupil + catchlight painted on the sphere ──
+// Geometry-stacked pupils were sub-pixel at gameplay zoom; a painted eye is
+// visible from every angle by construction. Texture centre (u=0.5) faces +Z
+// via phiStart = -π/2, so the pupil looks straight out of the head.
+const _eyeTexCache = new Map<string, THREE.CanvasTexture>();
+function makeEyeTex(irisHex: string): THREE.CanvasTexture {
+  const cached = _eyeTexCache.get(irisHex);
+  if (cached) return cached;
+  const Wd = 256, Ht = 128;
+  const c = document.createElement("canvas"); c.width = Wd; c.height = Ht;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#e9e6d4";
+  g.fillRect(0, 0, Wd, Ht);
+  const iris = C(irisHex);
+  const cx = Wd * 0.5, cy = Ht * 0.5; // equator, facing outward
+  const ir = Ht * 0.36;               // iris ≈ 72% of eye height — readable
+  const px = cx, py = cy + Ht * 0.02;
+  const grad = g.createRadialGradient(px, py - ir * 0.2, ir * 0.2, px, py, ir);
+  grad.addColorStop(0, "#" + iris.clone().lerp(C("#ffffff"), 0.4).getHexString());
+  grad.addColorStop(0.6, "#" + iris.getHexString());
+  grad.addColorStop(1, "#" + iris.clone().lerp(C("#000000"), 0.55).getHexString());
+  g.fillStyle = grad;
+  g.beginPath(); g.arc(px, py, ir, 0, Math.PI * 2); g.fill();
+  // iris rim
+  g.strokeStyle = "rgba(8,10,10,0.9)";
+  g.lineWidth = Ht * 0.022;
+  g.beginPath(); g.arc(px, py, ir * 0.985, 0, Math.PI * 2); g.stroke();
+  // pupil
+  g.fillStyle = "#060808";
+  g.beginPath(); g.arc(px, py, ir * 0.5, 0, Math.PI * 2); g.fill();
+  // catchlights (offset upward — symmetric under the left-eye Y-flip)
+  g.fillStyle = "rgba(255,255,255,0.95)";
+  g.beginPath(); g.arc(px, py - ir * 0.55, ir * 0.15, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "rgba(255,255,255,0.45)";
+  g.beginPath(); g.arc(px + ir * 0.3, py + ir * 0.3, ir * 0.08, 0, Math.PI * 2); g.fill();
+  // shade the rear of the eyeball (hidden inside the head, hides the u-seam too)
+  const sh = g.createLinearGradient(0, 0, Wd, 0);
+  sh.addColorStop(0, "rgba(46,56,56,0.55)");
+  sh.addColorStop(0.28, "rgba(46,56,56,0)");
+  sh.addColorStop(0.72, "rgba(46,56,56,0)");
+  sh.addColorStop(1, "rgba(46,56,56,0.55)");
+  g.fillStyle = sh; g.fillRect(0, 0, Wd, Ht);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _eyeTexCache.set(irisHex, t);
+  return t;
+}
+
 // remap a fin geometry's UVs: "parallel" rays run along v; "fan" radiates from base-center
 function mapUVs(geo: THREE.BufferGeometry, mode: "parallel" | "fan") {
   const pos = geo.attributes.position as THREE.BufferAttribute;
@@ -487,39 +535,26 @@ export function makeFish(def: SpeciesDef): FishRig {
   group.add(mouth);
 
   // eyes — ball + species iris + pupil + wet cornea + catchlight
-  const eyeR = Math.max(0.026, H * 0.1 * A.eyeScale * (0.8 + A.snout * 0.2));
+  // eyes: one textured sphere per side. Slightly larger than life so they
+  // read at gallery zoom; wet but not mirror-bright so the iris survives the
+  // tank lighting. The pupil is painted on, so it cannot be occluded or
+  // mis-oriented — it simply IS the surface.
+  const eyeR = Math.max(0.032, H * 0.155 * A.eyeScale * (0.85 + A.snout * 0.15));
   const ex = L * (0.34 - A.snout * 0.09);
   const ey = H * (0.11 - A.snoutFlat * 0.05);
-  const ballMat = new THREE.MeshPhysicalMaterial({ color: "#e6e4d2", roughness: 0.12, metalness: 0.1, clearcoat: 1 });
-  const irisMat = new THREE.MeshStandardMaterial({ color: A.eye, emissive: A.eye, emissiveIntensity: 0.3, roughness: 0.2, metalness: 0.55 });
-  const pupilMat = new THREE.MeshBasicMaterial({ color: "#0a0c0c" });
-  const corneaMat = new THREE.MeshPhysicalMaterial({
-    color: "#d8ece6", transparent: true, opacity: 0.22, roughness: 0.05, clearcoat: 1, depthWrite: false,
+  const eyeMat = new THREE.MeshPhysicalMaterial({
+    map: makeEyeTex(A.eye), roughness: 0.3, metalness: 0,
+    clearcoat: 0.45, clearcoatRoughness: 0.3,
   });
-  const specMat = new THREE.MeshBasicMaterial({ color: "#ffffff" });
-  // The eye is built as a stack of flattened spheres anchored to the flank
-  // surface, each layer proud of the one below. The old flat-disc version sat
-  // INSIDE the white eyeball sphere, so the ball's front face won every depth
-  // test and the eye rendered all white. Spheres need no orientation fiddling
-  // and stay correct from any camera angle.
+  tintMats.push(eyeMat);
+  const eyeGeo = new THREE.SphereGeometry(eyeR, 22, 16, -Math.PI / 2);
   const halfW = W * 0.5 * widthProfile(def, 0.5 - ex / L);
-  const ballC = halfW + eyeR * 0.12; // ball center just outside the flank
+  const ballC = halfW + eyeR * 0.5; // front half proud of the flank, back half embedded
   for (const sz of [1, -1]) {
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 14, 12), ballMat);
-    ball.position.set(ex, ey, sz * ballC);
-    ball.scale.z = 0.75; // outer face at ballC + 0.75·eyeR
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.62, 14, 12), irisMat);
-    iris.position.set(ex + eyeR * 0.15, ey, sz * (ballC + eyeR * 0.6));
-    iris.scale.z = 0.42; // outer face ≈ ballC + 0.85·eyeR — proud of the sclera
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.3, 10, 8), pupilMat);
-    pupil.position.set(ex + eyeR * 0.2, ey, sz * (ballC + eyeR * 0.72));
-    pupil.scale.z = 0.4; // outer face ≈ ballC + 0.84·eyeR
-    const cornea = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 1.12, 14, 12), corneaMat);
-    cornea.position.set(ex, ey, sz * ballC);
-    cornea.scale.z = 0.8;
-    const spec = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.14, 6, 5), specMat);
-    spec.position.set(ex + eyeR * 0.28, ey + eyeR * 0.4, sz * (ballC + eyeR * 0.78));
-    group.add(ball, iris, pupil, cornea, spec);
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.position.set(ex, ey, sz * ballC);
+    if (sz < 0) eye.rotation.y = Math.PI; // pupil faces outward on both sides
+    group.add(eye);
   }
 
   // barbels — curved whiskers along tube curves (channel catfish)
