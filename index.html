@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      /* The preview host doesn't proxy Vite's HMR websocket; silence that dev-only noise
+         before the injected client runs. Has no effect in the production build. */
+      (function () {
+        function noisy(a) {
+          try {
+            var s = a && (a.message || a.stack) ? String(a.message || "") + String(a.stack || "") : String(a);
+            return /websocket|\/@vite\/client/i.test(s);
+          } catch (e) { return false; }
+        }
+        var ce = console.error, cw = console.warn;
+        console.error = function () {
+          for (var i = 0; i < arguments.length; i++) if (noisy(arguments[i])) return;
+          ce.apply(console, arguments);
+        };
+        console.warn = function () {
+          for (var i = 0; i < arguments.length; i++) if (noisy(arguments[i])) return;
+          cw.apply(console, arguments);
+        };
+        window.addEventListener("unhandledrejection", function (e) { if (noisy(e.reason)) e.preventDefault(); });
+        window.addEventListener("error", function (e) { if (noisy(e.error)) e.preventDefault(); });
+      })();
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Greyline Aquarium — Coldwater Tycoon</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #04141a; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
