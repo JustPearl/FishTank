@@ -47,7 +47,7 @@ interface FishV {
   sandCool: number;
   wanderYaw: number;
   chaseT: number; chaseCool: number; chaseId: string;
-  sinkCorr: number; peckT: number;
+  sinkCorr: number; peckT: number; panicGen: number;
   glideT: number;   // burst-and-coast glide timer
   yawRate: number;  // rad/s, drives banking
 }
@@ -980,7 +980,7 @@ export class Engine {
       startleT: 0, startleDir: new THREE.Vector3(), sandCool: 1, wanderYaw: 0,
       glideT: 0, yawRate: 0,
       chaseT: 0, chaseCool: 2 + Math.random() * 4, chaseId: "",
-      sinkCorr: 1, peckT: 0,
+      sinkCorr: 1, peckT: 0, panicGen: 0,
     };
     this.fishes.push(fv);
     this.spawnBurst(pos, 10);
@@ -1248,10 +1248,24 @@ export class Engine {
             const inv = 1 / Math.max(0.4, Math.sqrt(rr));
             f.startleDir.set(dx * inv, dy * inv * 0.35, dz * inv);
             f.startleT = (d.chem && isCyp ? 0.85 : 0.5) + Math.random() * 0.35;
-            // panic ripples outward: the bolting fish splashes and startles its neighbours (two hops max)
-            if (d.age < 0.4 && Math.random() < 0.5)
-              this.disturbances.push({ x: f.pos.x, y: f.pos.y, z: f.pos.z, age: 0.55, chem: false });
+            f.panicGen = 0;
+            this.emitBubble(f.pos.x, f.pos.y, f.pos.z); // the bolting fish splashes
             break;
+          }
+        }
+      }
+      // panic wave: a panicking shoal-fish jolts its neighbours radially outward — the alarm
+      // ripples through the shoal like a real flash-expansion (two generations, then it dies out)
+      if (f.startleT > 0 && f.panicGen < 1 && isSchool && Math.random() < dt * 2.4) {
+        for (const o of this.fishes) {
+          if (o === f || o.floatT > 0 || o.def.id !== f.def.id || o.startleT > 0) continue;
+          const dx = o.pos.x - f.pos.x, dy = o.pos.y - f.pos.y, dz = o.pos.z - f.pos.z;
+          const rr = dx * dx + dy * dy + dz * dz;
+          if (rr < 9 && Math.random() < 0.55) {
+            const inv = 1 / Math.max(0.4, Math.sqrt(rr));
+            o.startleDir.set(dx * inv, dy * inv * 0.35, dz * inv);
+            o.startleT = 0.35 + Math.random() * 0.3;
+            o.panicGen = f.panicGen + 1;
           }
         }
       }
@@ -1434,6 +1448,7 @@ export class Engine {
 
       if (f.startleT > 0) {
         f.startleT -= dt;
+        if (f.startleT <= 0) f.panicGen = 0;
         desired.copy(f.startleDir).multiplyScalar(cruise * 3.1);
       }
 
