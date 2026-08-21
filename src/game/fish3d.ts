@@ -136,6 +136,50 @@ function scaleTex(): THREE.CanvasTexture {
   return _scales;
 }
 
+/** tangent-space normal map derived from the scale relief — real bumpy plates under the lights */
+let _scaleNorm: THREE.CanvasTexture | null = null;
+function scaleNormalTex(): THREE.CanvasTexture {
+  if (_scaleNorm) return _scaleNorm;
+  const S = 256, rowH = 16, scW = 22;
+  const hgt = new Float32Array(S * S);
+  for (let py = 0; py < S; py++) {
+    for (let px = 0; px < S; px++) {
+      let h = 0.5;
+      for (let row = -1; row < S / rowH + 1; row++) {
+        const y0 = row * rowH + rowH * 0.5;
+        const off = ((row % 2) + 2) % 2 === 0 ? 0 : scW * 0.5;
+        for (let k = -1; k < S / scW + 1; k++) {
+          const cx = k * scW + off;
+          const d = Math.sqrt((px - cx) ** 2 + (py - y0) ** 2) - rowH * 0.66;
+          const ang = Math.atan2(py - y0, px - cx);
+          if (ang < -2.7 || ang > -0.4) continue;
+          h += 0.42 * Math.exp(-(d * d) / (2 * 2.4 * 2.4));   // raised plate
+          h -= 0.5 * Math.exp(-((d + 1.6) ** 2) / (2 * 1.1 * 1.1)); // groove below the edge
+        }
+      }
+      hgt[py * S + px] = h;
+    }
+  }
+  const c = document.createElement("canvas"); c.width = S; c.height = S;
+  const g = c.getContext("2d")!;
+  const img = g.createImageData(S, S);
+  for (let py = 0; py < S; py++) {
+    for (let px = 0; px < S; px++) {
+      const l = hgt[py * S + ((px - 1 + S) % S)], r = hgt[py * S + ((px + 1) % S)];
+      const u = hgt[((py - 1 + S) % S) * S + px], dn = hgt[((py + 1) % S) * S + px];
+      const i = (py * S + px) * 4;
+      img.data[i] = 128 + Math.max(-127, Math.min(127, (l - r) * 260));
+      img.data[i + 1] = 128 + Math.max(-127, Math.min(127, (u - dn) * 260));
+      img.data[i + 2] = 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  _scaleNorm = new THREE.CanvasTexture(c);
+  _scaleNorm.wrapS = _scaleNorm.wrapT = THREE.RepeatWrapping;
+  return _scaleNorm;
+}
+
 // ── eye texture: sclera + iris + pupil + catchlight painted on the sphere ──
 // Geometry-stacked pupils were sub-pixel at gameplay zoom; a painted eye is
 // visible from every angle by construction. Texture centre (u=0.5) faces +Z
@@ -211,7 +255,11 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
   const darkPat = C("#222a1e");
   const isPike = A.snout > 0.7;
 
-  const geo = new THREE.SphereGeometry(0.5, 36, 24);
+  const geo = new THREE.SphereGeometry(0.5, 48, 32);
+  // eye station — must match makeFish so the sculpted sockets line up
+  const eyeRl = Math.max(0.032, H * 0.155 * (A.eyeScale ?? 1) * (0.85 + A.snout * 0.15));
+  const exS = L * (0.34 - A.snout * 0.09);
+  const eyS = H * (0.11 - A.snoutFlat * 0.05);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const colors = new Float32Array(pos.count * 3);
 
@@ -221,8 +269,11 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     const yn = y * 2;  // -1 belly → +1 back
 
     // ── sculpt ──
-    const snL = 0.1 + A.snout * 0.16;
-    const sn = 0.3 + 0.7 * sstep(0, snL, t);                 // snout taper (radius fraction)
+    const forehead = A.forehead ?? 0.5;
+    const snL = 0.06 + (1 - forehead) * 0.16 + A.snout * 0.1; // steep cyprinid face vs drawn-out pike snout
+    let sn = 0.3 + 0.7 * sstep(0, snL, t);                    // snout taper (radius fraction)
+    // rounded lip bulge at the very snout tip (blunt-snouted species)
+    sn *= 1 + 0.12 * (1 - A.snoutFlat) * Math.exp(-(((t - 0.02) ** 2) / (2 * 0.015 ** 2)));
     const yCrush = 1 - A.snoutFlat * 0.55 * (1 - sstep(0, 0.3, t)); // pike duckbill flatten
     const tt = 1 - A.taperAmt * sstep(A.taperStart, A.taperEnd, t); // caudal taper
     const ped = 1 - 0.2 * Math.exp(-(((t - 0.885) ** 2) / (2 * 0.028 ** 2))); // caudal peduncle wrist
@@ -230,8 +281,21 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     const bump = A.hump * H * 0.55 * Math.exp(-((t - 0.32) ** 2) / (2 * 0.15 ** 2)) * (1 - sstep(0.82, 0.96, t));
 
     const X = x * L;
-    const Y = y * H * sn * tt * ped * yCrush * hd + bump * (yn > 0 ? yn : 0.12 * yn);
-    const Z = z * W * widthProfile(def, t);
+    let Y = y * H * sn * tt * ped * yCrush * hd + bump * (yn > 0 ? yn : 0.12 * yn);
+    // ventral mouth: flatten the underside of the snout (suction feeders)
+    if (A.mouthVentral) Y *= 1 - A.mouthVentral * 0.4 * (1 - sstep(0, 0.15, t)) * (1 - sstep(-0.7, 0, yn));
+    const wp = widthProfile(def, t);
+    let Z = z * W * wp;
+    // jawline: lower jaw narrows toward the snout tip
+    Z *= 1 - 0.12 * (1 - sstep(0, 0.24, t)) * (1 - sstep(-1, -0.3, yn));
+    const halfWv = W * 0.5 * wp;
+    // eye sockets — shallow cups carved into the flanks where the eyes seat
+    if (Math.abs(Z) > halfWv * 0.45) {
+      const sock = 0.55 * eyeRl * Math.exp(-(((X - exS) ** 2) / (2 * (1.5 * eyeRl) ** 2)) - (((Y - eyS) ** 2) / (2 * (1.3 * eyeRl) ** 2)));
+      Z -= Math.sign(Z) * sock * sstep(halfWv * 0.45, halfWv * 0.75, Math.abs(Z));
+    }
+    // opercular bulge — the gill-plate ridge behind the eye (replaces a bolted-on mesh)
+    Z += Math.sign(Z) * 0.045 * W * Math.exp(-(((X - 0.18 * L) ** 2) / (2 * (0.05 * L) ** 2))) * sstep(0.35, 0.72, Math.abs(Z) / halfWv) * (1 - sstep(0.3, 0.42, t));
     pos.setXYZ(i, X, Y, Z);
 
     // ── color: countershading base ──
@@ -244,7 +308,7 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
       const u = (X / L + 0.55) * A.bars - Y * 0.85;
       const p = u - Math.floor(u);
       const bar = (1 - sstep(0.24, 0.52, p)) * sstep(-0.34, -0.02, yn) * sstep(0.07, 0.15, t) * (1 - sstep(0.85, 0.96, t));
-      col = mix(col, darkPat, bar * 0.88);
+      col = mix(col, darkPat, bar * 0.93);
     } else if (P === "spots") {
       // trout: black spots + red spots with halo
       const cx = Math.floor(X * 6), cy = Math.floor(Y * 13);
@@ -264,7 +328,7 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
       const jagY = -0.05 * H * (((s % 2) + 2) % 2 === 0 ? 1 : -1) * 0.7;
       const band = Math.exp(-((Y - jagY) ** 2) / (2 * (0.13 * H) ** 2)) * sstep(0.05, 0.12, t) * (1 - sstep(0.9, 1.0, t));
       const rag = 0.55 + 0.45 * vnoise(X * 5, Y * 3 + X);
-      col = mix(col, C("#2e3a26"), band * rag * 0.85);
+      col = mix(col, C("#2e3a26"), band * rag * 0.92);
       if (hash2(Math.floor(X * 5), Math.floor(Y * 8)) > 0.92 && yn > 0.2) col = mix(col, darkPat, 0.45);
     } else if (P === "pikespots") {
       // bean-shaped light spots on olive + faint juvenile bars
@@ -285,7 +349,7 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
       const off = sy % 2 === 0 ? 0 : 0.5;
       const ux = X * 5.5 + off, uy = Y * 9;
       const fx = Math.abs(ux - Math.floor(ux) - 0.5), fy = Math.abs(uy - Math.floor(uy) - 0.5);
-      if (Math.max(fx, fy) > 0.36 && yn > -0.7) col = col.multiplyScalar(0.8);
+      if (Math.max(fx, fy) > 0.36 && yn > -0.7) col = col.multiplyScalar(0.72);
       col = col.multiplyScalar(0.96 + hash2(Math.floor(ux), sy) * 0.09);
     } else if (P === "xspots") {
       // salmon: dark x-crosses above the lateral line
@@ -304,6 +368,8 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     const gill = Math.exp(-(((X - 0.26 * L) ** 2) / (2 * (0.06 * L) ** 2)));
     const sideAmt = Math.abs(Z) / Math.max(0.001, W * 0.5 * widthProfile(def, t) + 0.001);
     col.multiplyScalar(1 - 0.22 * gill * sstep(0.35, 0.9, sideAmt));
+    // sharp gill slit at the operculum's rear edge
+    col.multiplyScalar(1 - 0.3 * Math.exp(-(((X - 0.235 * L) ** 2) / (2 * (0.011 * L) ** 2))) * sstep(0.4, 0.85, sideAmt) * (1 - sstep(0.32, 0.46, t)));
     // lateral line sheen
     const ll = Math.exp(-(Y * Y) / (2 * (0.035 * H) ** 2)) * sstep(0.5, 0.95, sideAmt);
     col = mix(col, C("#e6ece6"), ll * 0.18);
@@ -402,12 +468,21 @@ export function makeFish(def: SpeciesDef): FishRig {
   const tintMats: THREE.MeshPhysicalMaterial[] = [];
 
   // wet skin: subtle scale relief + clearcoat sheen over the vertex paint
+  const sheen = A.sheen ?? 0.3;
   const sTex = scaleTex().clone();
   sTex.needsUpdate = true;
-  sTex.repeat.set(Math.max(5, Math.round(L * 3.4)), 2.4);
+  // tile at real dimensions: ~2 cm per scale, rows following body height
+  const rx = L / 0.045 / 12, ry = H / 0.05 / 16;
+  sTex.repeat.set(Math.max(0.5, rx), Math.max(0.35, ry));
+  sTex.anisotropy = 8;
+  const nTex = scaleNormalTex().clone();
+  nTex.needsUpdate = true;
+  nTex.repeat.copy(sTex.repeat);
+  nTex.anisotropy = 8;
   const bodyMat = new THREE.MeshPhysicalMaterial({
-    vertexColors: true, map: sTex, roughness: A.roughness, metalness: 0.1,
-    clearcoat: 0.6, clearcoatRoughness: 0.38,
+    vertexColors: true, map: sTex, normalMap: nTex, normalScale: new THREE.Vector2(0.5, 0.5),
+    roughness: Math.max(0.16, A.roughness - sheen * 0.12), metalness: 0.08 + sheen * 0.34,
+    clearcoat: 0.5 + sheen * 0.25, clearcoatRoughness: 0.34,
   });
   tintMats.push(bodyMat);
   const body = new THREE.Mesh(buildBody(def), bodyMat);
@@ -517,16 +592,7 @@ export function makeFish(def: SpeciesDef): FishRig {
     group.add(pv);
   }
 
-  // operculum — the bony gill plate, slightly proud of the flank
-  const operMat = new THREE.MeshPhysicalMaterial({
-    color: mix(C(A.side), C(A.belly), 0.4).multiplyScalar(0.92),
-    roughness: A.roughness + 0.05, metalness: 0.1, clearcoat: 0.6, clearcoatRoughness: 0.4,
-  });
-  tintMats.push(operMat);
-  const oper = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 12), operMat);
-  oper.scale.set(L * 0.13, H * 0.36 * (1 - A.snoutFlat * 0.2), W * 0.52);
-  oper.position.set(L * 0.2, -H * 0.02, 0);
-  group.add(oper);
+  // the operculum is now sculpted into the body mesh (bulge + gill slit paint)
 
   // mouth line
   const mouthMat = new THREE.MeshStandardMaterial({ color: "#1c2226", roughness: 1 });

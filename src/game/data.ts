@@ -15,6 +15,8 @@ export interface Anatomy {
   snoutFlat: number;  // vertical flattening of the snout
   hump: number;       // dorsal arch (bream/crucian deep bodies)
   headWide: number;   // catfish broad flat head
+  forehead?: number;  // 0 drawn-out snout .. 1 steep cyprinid face
+  sheen?: number;     // silvery metallic flank (roach/crucian high, catfish low)
   taperStart: number; taperEnd: number; taperAmt: number; // caudal taper
   dorsal: FinDef;
   dorsal2?: FinDef;   // soft second dorsal (perch/bass)
@@ -56,7 +58,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.62, growth: 0.0006, speed: 1.35, ai: "school",
     anatomy: {
       back: "#3e4f3e", side: "#b9c2ba", belly: "#e8e8da",
-      fin: "#8b918b", finPaired: "#c25e3e", eye: "#d8452b", eyeScale: 1.15,
+      fin: "#8b918b", finPaired: "#c25e3e", eye: "#d8452b", eyeScale: 1.15, forehead: 0.85, sheen: 0.85,
       pattern: "plain", snout: 0.08, snoutFlat: 0.08, hump: 0.24, headWide: 1.0,
       taperStart: 0.55, taperEnd: 0.97, taperAmt: 0.72,
       dorsal: { f: 0.1, b: 0.16, h: 0.3 }, anal: { f: 0.14, b: 0.3, h: 0.2 },
@@ -70,7 +72,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.6, growth: 0.00065, speed: 0.95, ai: "cruise",
     anatomy: {
       back: "#5a4a26", side: "#b08d4a", belly: "#e5d2a2",
-      fin: "#967740", finPaired: "#a5803f", eye: "#c9a233", eyeScale: 1.0,
+      fin: "#967740", finPaired: "#a5803f", eye: "#c9a233", eyeScale: 1.0, forehead: 0.92, sheen: 0.7,
       pattern: "lattice", snout: 0.06, snoutFlat: 0.1, hump: 0.5, headWide: 1.0,
       taperStart: 0.5, taperEnd: 0.95, taperAmt: 0.78,
       dorsal: { f: 0.0, b: 0.26, h: 0.38 }, anal: { f: 0.08, b: 0.3, h: 0.26 },
@@ -84,7 +86,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.6, growth: 0.00062, speed: 1.2, ai: "school",
     anatomy: {
       back: "#5c5f30", side: "#b3a458", belly: "#e6deb8",
-      fin: "#cf6b33", finPaired: "#d1652e", eye: "#d9b44a", eyeScale: 1.0,
+      fin: "#cf6b33", finPaired: "#d1652e", eye: "#d9b44a", eyeScale: 1.0, forehead: 0.6, sheen: 0.5,
       pattern: "bars", bars: 7, snout: 0.14, snoutFlat: 0.12, hump: 0.3, headWide: 1.0,
       taperStart: 0.55, taperEnd: 0.96, taperAmt: 0.72,
       dorsal: { f: 0.05, b: 0.1, h: 0.42, spiky: true, blotch: true },
@@ -100,7 +102,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.5, growth: 0.00034, speed: 1.5, ai: "cruise",
     anatomy: {
       back: "#47503a", side: "#b3bcb2", belly: "#eae6d6",
-      fin: "#6b7059", finPaired: "#7d8068", eye: "#d9a441", eyeScale: 1.0,
+      fin: "#6b7059", finPaired: "#7d8068", eye: "#d9a441", eyeScale: 1.0, forehead: 0.45, sheen: 0.35,
       pattern: "spots", pinkBand: true, snout: 0.18, snoutFlat: 0.2, hump: 0.22, headWide: 1.0,
       taperStart: 0.55, taperEnd: 0.97, taperAmt: 0.72,
       dorsal: { f: 0.06, b: 0.16, h: 0.3 }, anal: { f: 0.12, b: 0.26, h: 0.2 },
@@ -114,7 +116,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.5, growth: 0.00032, speed: 1.1, ai: "ambush",
     anatomy: {
       back: "#425030", side: "#93a06b", belly: "#e0dbba",
-      fin: "#5c6744", finPaired: "#66704c", eye: "#c9a63a", eyeScale: 1.0,
+      fin: "#5c6744", finPaired: "#66704c", eye: "#c9a63a", eyeScale: 1.0, forehead: 0.55, sheen: 0.3,
       pattern: "toothbar", jawBig: true, snout: 0.28, snoutFlat: 0.25, hump: 0.26, headWide: 1.05,
       taperStart: 0.52, taperEnd: 0.95, taperAmt: 0.72,
       dorsal: { f: 0.1, b: 0.12, h: 0.4, spiky: true },
@@ -130,7 +132,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.48, growth: 0.00026, speed: 0.85, ai: "bottom",
     anatomy: {
       back: "#454f5c", side: "#84909a", belly: "#cfd4d6",
-      fin: "#5f6973", finPaired: "#6b747c", eye: "#d8c15c", eyeScale: 0.55,
+      fin: "#5f6973", finPaired: "#6b747c", eye: "#d8c15c", eyeScale: 0.55, forehead: 0.5, sheen: 0.12,
       pattern: "mottle", snout: 0.15, snoutFlat: 0.3, hump: 0.12, headWide: 1.4,
       taperStart: 0.6, taperEnd: 0.97, taperAmt: 0.7,
       dorsal: { f: 0.14, b: 0.22, h: 0.16 }, anal: { f: 0.02, b: 0.4, h: 0.24 },
@@ -144,7 +146,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.45, growth: 0.0002, speed: 1.0, ai: "ambush",
     anatomy: {
       back: "#4c5634", side: "#7d8852", belly: "#dad7b4",
-      fin: "#767e4e", finPaired: "#7d8252", eye: "#c9a63a", eyeScale: 0.95,
+      fin: "#767e4e", finPaired: "#7d8252", eye: "#c9a63a", eyeScale: 0.95, forehead: 0.25, sheen: 0.3,
       pattern: "pikespots", snout: 1.0, snoutFlat: 0.8, hump: 0.06, headWide: 1.0,
       taperStart: 0.62, taperEnd: 0.97, taperAmt: 0.66,
       dorsal: { f: -0.06, b: 0.3, h: 0.28 }, anal: { f: 0.08, b: 0.34, h: 0.2 },
@@ -158,7 +160,7 @@ export const SPECIES: SpeciesDef[] = [
     startScale: 0.46, growth: 0.00024, speed: 1.45, ai: "cruise", requiresCap: 24,
     anatomy: {
       back: "#3f4d58", side: "#aab8bd", belly: "#e6eae8",
-      fin: "#6b7880", finPaired: "#77848a", eye: "#c9b23f", eyeScale: 1.0,
+      fin: "#6b7880", finPaired: "#77848a", eye: "#c9b23f", eyeScale: 1.0, forehead: 0.4, sheen: 0.55,
       pattern: "xspots", snout: 0.22, snoutFlat: 0.25, hump: 0.2, headWide: 1.0,
       taperStart: 0.55, taperEnd: 0.97, taperAmt: 0.7,
       dorsal: { f: 0.08, b: 0.16, h: 0.3 }, anal: { f: 0.1, b: 0.26, h: 0.22 },
