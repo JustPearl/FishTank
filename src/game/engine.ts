@@ -1609,7 +1609,8 @@ export class Engine {
     el.addEventListener("pointerleave", () => { this.drag.on = false; });
     el.addEventListener("wheel", (e) => {
       e.preventDefault();
-      this.camDist = Math.max(9.5, Math.min(24, this.camDist + e.deltaY * 0.011));
+      // proportional zoom — identical feel at nose-to-glass close-up and full-tank overview
+      this.camDist = Math.max(3.6, Math.min(26, this.camDist * Math.exp(e.deltaY * 0.0011)));
       this.emitZoom();
     }, { passive: false });
     window.addEventListener("keydown", this.onKeyDown);
@@ -1628,12 +1629,13 @@ export class Engine {
   // ── camera API ────────────────────────────────────────────────────────────
   private emitZoom() { this.onZoomChange?.(Math.round((15.8 / this.camDist) * 100)); }
   zoomBy(d: number) {
-    this.camDist = Math.max(9.5, Math.min(24, this.camDist - d));
+    // d > 0 zooms in; proportional so buttons/keys feel right at any distance
+    this.camDist = Math.max(3.6, Math.min(26, this.camDist * Math.pow(0.86, d)));
     this.emitZoom();
   }
   focusFish(id: string | null) {
     this.focusId = id;
-    if (id && this.camDist > 12.5) { this.camDist = 12.5; this.emitZoom(); }
+    if (id && this.camDist > 8.2) { this.camDist = 8.2; this.emitZoom(); } // dolly in for a portrait
   }
   private cancelFollow() {
     if (this.focusId) { this.focusId = null; this.onFocusLost?.(); }
