@@ -28,6 +28,20 @@ export interface FishRig {
   baseMat: THREE.MeshPhysicalMaterial;
 }
 
+/**
+ * Lateral width multiplier of the body at station t (0 snout → 1 tail).
+ * Shared by the body sculpt and the eye placement so the eye always knows
+ * exactly where the flank surface is.
+ */
+function widthProfile(def: SpeciesDef, t: number): number {
+  const A = def.anatomy;
+  const zSn = 1 - (0.24 - A.snout * 0.12) * (1 - sstep(0, 0.18, t));
+  const tt = 1 - A.taperAmt * sstep(A.taperStart, A.taperEnd, t);
+  const ped = 1 - 0.2 * Math.exp(-(((t - 0.885) ** 2) / (2 * 0.028 ** 2)));
+  const hw = 1 + (A.headWide - 1) * (1 - sstep(0.04, 0.34, t));
+  return zSn * tt * ped * hw;
+}
+
 // ── shared procedural textures (built once) ───────────────────────────────────
 let _rayPar: THREE.CanvasTexture | null = null;
 function rayParTex(): THREE.CanvasTexture {
@@ -162,16 +176,14 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     const snL = 0.1 + A.snout * 0.16;
     const sn = 0.3 + 0.7 * sstep(0, snL, t);                 // snout taper (radius fraction)
     const yCrush = 1 - A.snoutFlat * 0.55 * (1 - sstep(0, 0.3, t)); // pike duckbill flatten
-    const zSn = 1 - (0.24 - A.snout * 0.12) * (1 - sstep(0, 0.18, t));
     const tt = 1 - A.taperAmt * sstep(A.taperStart, A.taperEnd, t); // caudal taper
-    const ped = 1 - 0.2 * Math.exp(-(((t - 0.885) ** 2) / (2 * 0.028 ** 2))); // distinct caudal peduncle wrist
-    const hw = 1 + (A.headWide - 1) * (1 - sstep(0.04, 0.34, t));   // catfish broad head
+    const ped = 1 - 0.2 * Math.exp(-(((t - 0.885) ** 2) / (2 * 0.028 ** 2))); // caudal peduncle wrist
     const hd = 1 - (A.headWide - 1) * 0.32 * (1 - sstep(0, 0.3, t));
     const bump = A.hump * H * 0.55 * Math.exp(-((t - 0.32) ** 2) / (2 * 0.15 ** 2)) * (1 - sstep(0.82, 0.96, t));
 
     const X = x * L;
     const Y = y * H * sn * tt * ped * yCrush * hd + bump * (yn > 0 ? yn : 0.12 * yn);
-    const Z = z * W * zSn * tt * ped * hw;
+    const Z = z * W * widthProfile(def, t);
     pos.setXYZ(i, X, Y, Z);
 
     // ── color: countershading base ──
@@ -242,7 +254,7 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
 
     // operculum (gill plate) shading
     const gill = Math.exp(-(((X - 0.26 * L) ** 2) / (2 * (0.06 * L) ** 2)));
-    const sideAmt = Math.abs(Z) / Math.max(0.001, W * 0.5 * tt * hw + 0.001);
+    const sideAmt = Math.abs(Z) / Math.max(0.001, W * 0.5 * widthProfile(def, t) + 0.001);
     col.multiplyScalar(1 - 0.22 * gill * sstep(0.35, 0.9, sideAmt));
     // lateral line sheen
     const ll = Math.exp(-(Y * Y) / (2 * (0.035 * H) ** 2)) * sstep(0.5, 0.95, sideAmt);
@@ -478,36 +490,35 @@ export function makeFish(def: SpeciesDef): FishRig {
   const eyeR = Math.max(0.026, H * 0.1 * A.eyeScale * (0.8 + A.snout * 0.2));
   const ex = L * (0.34 - A.snout * 0.09);
   const ey = H * (0.11 - A.snoutFlat * 0.05);
-  const ez = W * 0.36;
   const ballMat = new THREE.MeshPhysicalMaterial({ color: "#e6e4d2", roughness: 0.12, metalness: 0.1, clearcoat: 1 });
-  const irisMat = new THREE.MeshStandardMaterial({ color: A.eye, roughness: 0.2, metalness: 0.55 });
+  const irisMat = new THREE.MeshStandardMaterial({ color: A.eye, emissive: A.eye, emissiveIntensity: 0.3, roughness: 0.2, metalness: 0.55 });
   const pupilMat = new THREE.MeshBasicMaterial({ color: "#0a0c0c" });
   const corneaMat = new THREE.MeshPhysicalMaterial({
     color: "#d8ece6", transparent: true, opacity: 0.22, roughness: 0.05, clearcoat: 1, depthWrite: false,
   });
   const specMat = new THREE.MeshBasicMaterial({ color: "#ffffff" });
-  // the eye must sit beyond the actual flank surface — including broad-headed
-  // species like catfish, whose head width at the eye exceeds W/2 — or the
-  // body's depth buffer hides the iris and the eye renders all white.
-  const tEye = 0.16;
-  const zSnE = 1 - (0.24 - A.snout * 0.12) * (1 - sstep(0, 0.18, tEye));
-  const hwE = 1 + (A.headWide - 1) * (1 - sstep(0.04, 0.34, tEye));
-  const halfW = W * 0.5 * zSnE * hwE;
-  const ballZ = Math.max(ez, halfW - eyeR * 0.45);
-  const surfZ = halfW + eyeR * 0.22;
+  // The eye is built as a stack of flattened spheres anchored to the flank
+  // surface, each layer proud of the one below. The old flat-disc version sat
+  // INSIDE the white eyeball sphere, so the ball's front face won every depth
+  // test and the eye rendered all white. Spheres need no orientation fiddling
+  // and stay correct from any camera angle.
+  const halfW = W * 0.5 * widthProfile(def, 0.5 - ex / L);
+  const ballC = halfW + eyeR * 0.12; // ball center just outside the flank
   for (const sz of [1, -1]) {
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 12, 10), ballMat);
-    ball.position.set(ex, ey, sz * ballZ);
-    const iris = new THREE.Mesh(new THREE.CircleGeometry(eyeR * 0.66, 16), irisMat);
-    iris.position.set(ex + eyeR * 0.1, ey, sz * surfZ);
-    iris.rotation.y = sz > 0 ? 0 : Math.PI; // disc faces outward from the head
-    const pupil = new THREE.Mesh(new THREE.CircleGeometry(eyeR * 0.32, 12), pupilMat);
-    pupil.position.set(ex + eyeR * 0.16, ey, sz * (surfZ + eyeR * 0.07));
-    pupil.rotation.y = sz > 0 ? 0 : Math.PI;
-    const cornea = new THREE.Mesh(new THREE.SphereGeometry(Math.max(eyeR * 1.45, surfZ - ballZ + eyeR * 0.25), 12, 10), corneaMat);
-    cornea.position.set(ex, ey, sz * ballZ);
-    const spec = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.16, 6, 5), specMat);
-    spec.position.set(ex + eyeR * 0.2, ey + eyeR * 0.42, sz * (surfZ + eyeR * 0.16));
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 14, 12), ballMat);
+    ball.position.set(ex, ey, sz * ballC);
+    ball.scale.z = 0.75; // outer face at ballC + 0.75·eyeR
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.62, 14, 12), irisMat);
+    iris.position.set(ex + eyeR * 0.15, ey, sz * (ballC + eyeR * 0.6));
+    iris.scale.z = 0.42; // outer face ≈ ballC + 0.85·eyeR — proud of the sclera
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.3, 10, 8), pupilMat);
+    pupil.position.set(ex + eyeR * 0.2, ey, sz * (ballC + eyeR * 0.72));
+    pupil.scale.z = 0.4; // outer face ≈ ballC + 0.84·eyeR
+    const cornea = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 1.12, 14, 12), corneaMat);
+    cornea.position.set(ex, ey, sz * ballC);
+    cornea.scale.z = 0.8;
+    const spec = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.14, 6, 5), specMat);
+    spec.position.set(ex + eyeR * 0.28, ey + eyeR * 0.4, sz * (ballC + eyeR * 0.78));
     group.add(ball, iris, pupil, cornea, spec);
   }
 
