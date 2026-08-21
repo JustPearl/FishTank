@@ -49,9 +49,51 @@ function StatRow({ snap }: { snap: Snapshot }) {
   );
 }
 
+const VERSION = "2.5.0";
+
+const CHANGELOG: { v: string; k: "sim" | "model" | "fix"; t: string }[] = [
+  { v: "2.5", k: "model", t: "Head sculpt rebuild — eye sockets, brow ridges, sculpted lips & painted mouth clefts" },
+  { v: "2.4", k: "fix", t: "Close-up zoom to 3.6 units; focus-cam dollies in for portraits" },
+  { v: "2.3", k: "model", t: "Scale normal-map relief, true-dimension tiling, per-species sheen" },
+  { v: "2.2", k: "sim", t: "Ecosystem pass — piscivore predation, Schreckstoff panic waves, territorial chases, nocturnal catfish" },
+  { v: "2.1", k: "sim", t: "Movement pass — burst-and-coast glides, banked turns, sink-and-correct hovering" },
+];
+
+function ChangelogPanel() {
+  const dot: Record<string, string> = { sim: "#5adecb", model: "#f4b83f", fix: "#ff7b5c" };
+  return (
+    <div className="hidden md:flex flex-col w-[252px] shrink-0 rounded-[6px] border border-line bg-panel/90 shadow-[0_16px_44px_rgba(0,0,0,0.55)] overflow-hidden fade-up" style={{ animationDelay: "0.15s" }}>
+      <div className="flex items-center gap-2 px-3.5 py-2 border-b border-line bg-[#0a2833]">
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-amber2" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 4h14M5 9h14M5 14h9M5 19h6" strokeLinecap="round" />
+        </svg>
+        <span className="text-[9px] tracking-[0.34em] text-amber2 font-semibold">MAINTENANCE LEDGER</span>
+      </div>
+      <div className="p-3 space-y-2.5">
+        {CHANGELOG.map((c) => (
+          <div key={c.v} className="flex gap-2.5 group">
+            <div className="flex flex-col items-center pt-[3px]">
+              <span className="w-2 h-2 rounded-full border border-[#04161c] shadow-[0_0_6px_rgba(0,0,0,0.4)]" style={{ background: dot[c.k] }} />
+              <span className="w-px flex-1 mt-1 bg-line/70 group-last:hidden" />
+            </div>
+            <div className="pb-1">
+              <span className="font-disp font-bold text-[11px] text-cyan2 tabular-nums">v{c.v}</span>
+              <p className="text-[10.5px] leading-snug text-dim mt-0.5">{c.t}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-auto px-3.5 py-2 border-t border-line/60 text-[8.5px] tracking-[0.18em] text-dim/80 tabular-nums">
+        BUILD COLDWATER-{VERSION} · THREE.JS
+      </div>
+    </div>
+  );
+}
+
 export function MenuScreen({ onStart }: { onStart: () => void }) {
   return (
     <div className="absolute inset-0 z-40 grid place-items-center bg-[radial-gradient(ellipse_at_center,rgba(2,12,17,0.55)_0%,rgba(1,8,12,0.88)_100%)]">
+      <div className="flex items-start gap-4 px-4">
       <Placard>
         <div className="flex items-center gap-3 mb-1">
           <div className="w-11 h-11 rounded-[4px] border border-cyan2/60 bg-cyan2/10 p-2 text-cyan2">{I.fish()}</div>
@@ -79,7 +121,13 @@ export function MenuScreen({ onStart }: { onStart: () => void }) {
           <Btn onClick={onStart}>OPEN THE GALLERY</Btn>
           <span className="text-[10.5px] text-dim leading-snug">starting fund $120 · don't go bankrupt<br />pike &amp; bass hunt tankmates under half their length</span>
         </div>
+        <div className="mt-3 pt-2.5 border-t border-line/60 flex items-center gap-2 text-[9px] tracking-[0.22em] text-dim/80 tabular-nums">
+          <span className="px-1.5 py-0.5 rounded-[3px] border border-amber2/50 text-amber2 font-disp font-bold text-[9.5px] tracking-[0.12em]">v{VERSION}</span>
+          COLDWATER HALL · CURATOR'S BUILD
+        </div>
       </Placard>
+      <ChangelogPanel />
+      </div>
     </div>
   );
 }
