@@ -90,16 +90,19 @@ function scaleTex(): THREE.CanvasTexture {
   const S = 256, rowH = 16, scW = 22;
   const c = document.createElement("canvas"); c.width = S; c.height = S;
   const g = c.getContext("2d")!;
-  g.clearRect(0, 0, S, S);
+  // OPAQUE light base — this texture multiplies the vertex paint, so any
+  // transparent pixel would render the fish black.
+  g.fillStyle = "#ededed";
+  g.fillRect(0, 0, S, S);
   for (let row = -1; row < S / rowH + 1; row++) {
     const y0 = row * rowH + rowH * 0.5;
     const off = ((row % 2) + 2) % 2 === 0 ? 0 : scW * 0.5;
     for (let k = -1; k < S / scW + 1; k++) {
       const cx = k * scW + off;
-      g.strokeStyle = "rgba(255,255,255,0.09)";
       g.lineWidth = 1.1;
+      g.strokeStyle = "rgba(255,255,255,0.85)";
       g.beginPath(); g.arc(cx, y0 + 1.4, rowH * 0.66, -2.55, -0.6); g.stroke();
-      g.strokeStyle = "rgba(0,0,0,0.11)";
+      g.strokeStyle = "rgba(0,0,0,0.16)";
       g.beginPath(); g.arc(cx, y0, rowH * 0.66, -2.55, -0.6); g.stroke();
     }
   }
