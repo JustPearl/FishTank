@@ -47,6 +47,7 @@ interface FishV {
   sandCool: number;
   wanderYaw: number;
   chaseT: number; chaseCool: number; chaseId: string;
+  sinkCorr: number; peckT: number;
   glideT: number;   // burst-and-coast glide timer
   yawRate: number;  // rad/s, drives banking
 }
@@ -979,6 +980,7 @@ export class Engine {
       startleT: 0, startleDir: new THREE.Vector3(), sandCool: 1, wanderYaw: 0,
       glideT: 0, yawRate: 0,
       chaseT: 0, chaseCool: 2 + Math.random() * 4, chaseId: "",
+      sinkCorr: 1, peckT: 0,
     };
     this.fishes.push(fv);
     this.spawnBurst(pos, 10);
@@ -1246,6 +1248,9 @@ export class Engine {
             const inv = 1 / Math.max(0.4, Math.sqrt(rr));
             f.startleDir.set(dx * inv, dy * inv * 0.35, dz * inv);
             f.startleT = (d.chem && isCyp ? 0.85 : 0.5) + Math.random() * 0.35;
+            // panic ripples outward: the bolting fish splashes and startles its neighbours (two hops max)
+            if (d.age < 0.4 && Math.random() < 0.5)
+              this.disturbances.push({ x: f.pos.x, y: f.pos.y, z: f.pos.z, age: 0.55, chem: false });
             break;
           }
         }
@@ -1256,13 +1261,14 @@ export class Engine {
       let domX = 0, domZ = 0, fleeX = 0, fleeY = 0, fleeZ = 0, predNear = false;
       let huntPrey: FishV | null = null, huntD2 = 49;
       let rival: FishV | null = null, rivalD2 = 2.4;
+      const sepR2 = (0.35 + L * 0.3) ** 2; // bigger fish give each other more room
       for (const o of this.fishes) {
         if (o === f || o.floatT > 0) continue;
         const dx = f.pos.x - o.pos.x, dy = f.pos.y - o.pos.y, dz = f.pos.z - o.pos.z;
         const d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > 49) continue;
         const oL = o.def.L * (this.scaleTarget.get(o.id) ?? 1);
-        if (d2 < 0.55) { const inv = 1 / Math.max(0.12, d2); sepX += dx * inv; sepY += dy * inv; sepZ += dz * inv; }
+        if (d2 < sepR2) { const inv = 1 / Math.max(0.12, d2); sepX += dx * inv; sepY += dy * inv; sepZ += dz * inv; }
         if (oL > L * 1.5 && d2 < 7) {
           const inv = 1 / Math.max(0.6, d2);
           if (o.def.ai === "ambush") { predNear = true; fleeX += dx * inv * 1.4; fleeY += dy * inv * 0.5; fleeZ += dz * inv * 1.4; }
@@ -1286,9 +1292,18 @@ export class Engine {
         const r = Math.random();
         const night = 1 - this.daylight;
         const gw = P.graze * (f.def.ai === "bottom" ? 1 + night * 0.9 : 1);
+        const restW = (f.def.ai === "bottom" || f.def.id === "crucian") && !isPred ? 0.12 : 0;
         if (r < gw && f.def.ai !== "ambush") { f.mode = 1; f.modeT = 2.4 + Math.random() * 2.6; }
         else if (r < gw + P.hover) { f.mode = 2; f.modeT = 1.1 + Math.random() * 1.9; }
-        else { f.mode = 0; f.modeT = 2 + Math.random() * 3; }
+        else if (r < gw + P.hover + restW) {
+          // settle on the sand for a while — a catfish at rest
+          f.mode = 3; f.modeT = 2.5 + Math.random() * 3.5;
+          f.target.set(
+            Math.max(-bx * 0.85, Math.min(bx * 0.85, f.pos.x + (Math.random() - 0.5) * 2)),
+            0.95,
+            Math.max(-bz * 0.8, Math.min(bz * 0.8, f.pos.z)));
+          f.retarget = 99;
+        } else { f.mode = 0; f.modeT = 2 + Math.random() * 3; }
       }
 
       // ── choose a target ──
@@ -1316,11 +1331,15 @@ export class Engine {
           f.sandCool = 0.7 + Math.random() * 0.9;
           this.emitBubble(f.pos.x + (Math.random() - 0.5) * 0.5, TANK.y0 + 0.15, f.pos.z + (Math.random() - 0.5) * 0.5);
         }
+      } else if (f.mode === 3) {
+        f.retarget = 99; // hold the resting spot
       } else if (f.retarget <= 0) {
         f.retarget = 2.5 + Math.random() * 4;
         let tx = (Math.random() - 0.5) * 2 * bx * 0.9;
         let ty = yBand[0] + Math.random() * (yBand[1] - yBand[0]);
         const tz = (Math.random() - 0.5) * 2 * bz * 0.85;
+        // low oxygen drives fish to the surface to gulp
+        if (this.oxygen < 30 && f.def.ai !== "bottom" && Math.random() < 0.45) ty = 5.05 + Math.random() * 0.6;
         if (isSchool) {
           let cx = 0, cy = 0, cz = 0, n = 0;
           for (const o of this.fishes) if (o !== f && o.def.id === f.def.id && o.floatT === 0) { cx += o.pos.x; cy += o.pos.y; cz += o.pos.z; n++; }
@@ -1333,6 +1352,7 @@ export class Engine {
       let spdMul = (1 + Math.max(0, hunger - 40) * 0.006) * P.drive;
       if (f.mode === 2 && !inChase) spdMul *= 0.35;
       else if (f.mode === 1) spdMul *= 0.6;
+      else if (f.mode === 3) spdMul *= 0.1;
       if (seekPellet) spdMul *= 1.35;
       if (inChase) spdMul *= 1.5;
       if (predNear && !isPred) spdMul *= 1.4; // sustained wariness near a predator
@@ -1367,6 +1387,27 @@ export class Engine {
       const dist = desired.length();
       if (dist > 0.05) desired.normalize().multiplyScalar(cruise * spdMul);
       else desired.set(0, 0, 0);
+
+      // sink-and-correct: a hovering fish slowly loses depth, then strokes back up
+      if (f.mode === 2 && !inChase && !isPred) {
+        desired.y = -0.06;
+        f.sinkCorr -= dt;
+        if (f.pos.y < f.target.y - 0.3 || (f.sinkCorr <= 0 && f.pos.y < f.target.y - 0.1)) {
+          f.sinkCorr = 1.3 + Math.random() * 2.4;
+          f.vel.y += 0.3;
+          f.flickT = Math.max(f.flickT, 0.28);
+        }
+      }
+      // feeding pecks: short lunges as the fish closes on a morsel
+      if (seekPellet && dist < 1.15) {
+        f.peckT -= dt;
+        if (f.peckT <= 0) {
+          f.peckT = 0.4 + Math.random() * 0.5;
+          this.v1.copy(f.target).sub(f.pos);
+          if (this.v1.lengthSq() > 1e-4) { this.v1.normalize(); f.vel.addScaledVector(this.v1, 0.34); }
+          f.flickT = Math.max(f.flickT, 0.2);
+        }
+      }
 
       // social forces: flee predators, yield to dominants, shoal, follow feeding cues
       if (!isPred) {
@@ -1446,8 +1487,10 @@ export class Engine {
       g.position.copy(f.pos);
       g.rotation.y = f.yaw;
       // pitch: nose follows the climb/dive, nose-down while grazing (rotation.z = lateral axis)
-      const grazePitch = f.mode === 1 ? -0.42 : 0;
-      const pitchT = Math.max(-0.5, Math.min(0.5, grazePitch + Math.atan2(f.vel.y, Math.max(0.12, horiz)) * 0.6));
+      const grazePitch = f.mode === 1 ? -0.42 : f.mode === 3 ? -0.08 : 0;
+      // the nose dips and lifts with each tail stroke — thrust isn't perfectly axial
+      const beatBob = Math.sin(f.phase) * 0.015 * (0.25 + Math.min(1, speed / 1.4));
+      const pitchT = Math.max(-0.5, Math.min(0.5, grazePitch + beatBob + Math.atan2(f.vel.y, Math.max(0.12, horiz)) * 0.6));
       g.rotation.z += (pitchT - g.rotation.z) * Math.min(1, dt * 4.5);
       // roll: bank into turns around the spine, spring back to level — never a sine wave
       const rollT = Math.max(-0.42, Math.min(0.42, -f.yawRate * 0.24));
@@ -1464,7 +1507,8 @@ export class Engine {
       let animSp = sp01;
       if (f.glideT > 0) animSp *= 0.25; // coasting: tail amplitude collapses
       if (f.flickT > 0) { f.flickT -= dt; animSp = Math.max(animSp, 0.7); }
-      f.rig.update(f.phase, animSp, dt);
+      const turnN = Math.max(-1, Math.min(1, f.yawRate * 0.45));
+      f.rig.update(f.phase, animSp, dt, turnN);
 
       // ── eating ──
       const eatR = 0.22 + L * 0.28;
@@ -1494,13 +1538,14 @@ export class Engine {
           }
         }
       }
-      if (Math.random() < dt * 0.05) this.emitBubble(f.pos.x + Math.cos(f.yaw) * L * 0.5, f.pos.y + 0.1, f.pos.z - Math.sin(f.yaw) * L * 0.5);
+      if (Math.random() < dt * (0.02 + sp01 * 0.22)) this.emitBubble(f.pos.x + Math.cos(f.yaw) * L * 0.5, f.pos.y + 0.1, f.pos.z - Math.sin(f.yaw) * L * 0.5);
     }
   }
 
   // ── input ─────────────────────────────────────────────────────────────────
   private ray = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
+  private v1 = new THREE.Vector3();
   private plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
   private hit = new THREE.Vector3();
 

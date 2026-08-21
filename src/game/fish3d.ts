@@ -23,7 +23,7 @@ const mix = (a: THREE.Color, b: THREE.Color, t: number) => a.clone().lerp(b, Mat
 export interface FishRig {
   group: THREE.Group;
   body: THREE.Mesh;
-  update: (phase: number, speed01: number, dt: number) => void;
+  update: (phase: number, speed01: number, dt: number, turn: number) => void;
   setDead: () => void;
   baseMat: THREE.MeshStandardMaterial;
 }
@@ -235,10 +235,12 @@ export function makeFish(def: SpeciesDef): FishRig {
   const D = A.dorsal;
   const dx0 = L * D.f, dx1 = -L * D.b;
   const dorsalY = H * (0.3 + A.hump * 0.28);
+  const flutter: THREE.Mesh[] = [];
   if (D.spiky) {
     const d = new THREE.Mesh(spinyDorsalGeo(L, H, dx0, dx1, D.h), finMat);
     d.position.y = dorsalY;
     group.add(d);
+    flutter.push(d);
     if (D.blotch) {
       const bl = new THREE.Mesh(
         new THREE.CircleGeometry(L * 0.045, 12),
@@ -251,12 +253,14 @@ export function makeFish(def: SpeciesDef): FishRig {
     const d = new THREE.Mesh(dorsalGeo(L, H, dx0, dx1, D.h), finMat);
     d.position.y = dorsalY;
     group.add(d);
+    flutter.push(d);
   }
   if (A.dorsal2) {
     const D2 = A.dorsal2;
     const d2 = new THREE.Mesh(dorsalGeo(L, H, L * D2.f, -L * D2.b, D2.h), finMat);
     d2.position.y = dorsalY * 0.97;
     group.add(d2);
+    flutter.push(d2);
   }
 
   // anal fin (long ribbon on catfish)
@@ -265,6 +269,7 @@ export function makeFish(def: SpeciesDef): FishRig {
   anal.rotation.z = Math.PI;
   anal.position.y = -H * 0.3;
   group.add(anal);
+  flutter.push(anal);
 
   // adipose fin (trout / salmon / catfish)
   if (A.adipose) {
@@ -349,16 +354,23 @@ export function makeFish(def: SpeciesDef): FishRig {
 
   let dead = false;
   let pectPh = Math.random() * 6;
-  const update = (phase: number, speed01: number, dt: number) => {
+  let tailAmp = 0.3;
+  const update = (phase: number, speed01: number, dt: number, turn: number) => {
     if (dead) return;
-    tailPivot.rotation.y = Math.sin(phase) * (0.1 + 0.6 * speed01);
-    body.rotation.y = Math.sin(phase) * (0.018 + 0.035 * speed01);
+    // tail amplitude eases toward speed — power builds into a burst, collapses into a glide
+    tailAmp += (0.1 + 0.62 * speed01 - tailAmp) * Math.min(1, dt * 4.2);
+    tailPivot.rotation.y = Math.sin(phase) * tailAmp;
+    // body pre-flexes into a turn on top of the beat sway
+    body.rotation.y = Math.sin(phase) * (0.018 + 0.035 * speed01) + turn * 0.11;
     body.rotation.z = Math.sin(phase * 0.5) * 0.012;
     // pectorals scull slowly when holding station, fold away when sprinting
     pectPh += dt * (2.4 + (1 - speed01) * 2.8);
     const pAmp = 0.5 - 0.32 * speed01;
     pectL.rotation.z = 0.75 + Math.sin(pectPh + 1.1) * pAmp;
     pectR.rotation.z = 0.75 + Math.sin(pectPh) * pAmp;
+    // unpaired fins ripple faintly, faster with speed
+    for (let i = 0; i < flutter.length; i++)
+      flutter[i].rotation.y = Math.sin(phase * 0.63 + i * 2.1) * 0.055 * (0.3 + speed01);
   };
 
   const setDead = () => {
