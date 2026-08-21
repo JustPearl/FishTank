@@ -539,17 +539,20 @@ export function makeFish(def: SpeciesDef): FishRig {
   // read at gallery zoom; wet but not mirror-bright so the iris survives the
   // tank lighting. The pupil is painted on, so it cannot be occluded or
   // mis-oriented — it simply IS the surface.
-  const eyeR = Math.max(0.032, H * 0.155 * A.eyeScale * (0.85 + A.snout * 0.15));
   const ex = L * (0.34 - A.snout * 0.09);
   const ey = H * (0.11 - A.snoutFlat * 0.05);
+  const halfW = W * 0.5 * widthProfile(def, 0.5 - ex / L);
+  // socketed eyes: never wider than the skull allows, and the ball's centre
+  // sits INSIDE the head so only the corneal dome pokes out (not on stalks)
+  const eyeBase = H * 0.155 * A.eyeScale * (0.85 + A.snout * 0.15);
+  const eyeR = Math.max(0.03, Math.min(eyeBase, halfW * 0.62));
   const eyeMat = new THREE.MeshPhysicalMaterial({
     map: makeEyeTex(A.eye), roughness: 0.3, metalness: 0,
     clearcoat: 0.45, clearcoatRoughness: 0.3,
   });
   tintMats.push(eyeMat);
   const eyeGeo = new THREE.SphereGeometry(eyeR, 22, 16, -Math.PI / 2);
-  const halfW = W * 0.5 * widthProfile(def, 0.5 - ex / L);
-  const ballC = halfW + eyeR * 0.5; // front half proud of the flank, back half embedded
+  const ballC = halfW - 0.38 * eyeR; // centre buried in the skull, dome proud of the flank
   for (const sz of [1, -1]) {
     const eye = new THREE.Mesh(eyeGeo, eyeMat);
     eye.position.set(ex, ey, sz * ballC);
