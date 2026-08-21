@@ -99,11 +99,21 @@ function scaleTex(): THREE.CanvasTexture {
     const off = ((row % 2) + 2) % 2 === 0 ? 0 : scW * 0.5;
     for (let k = -1; k < S / scW + 1; k++) {
       const cx = k * scW + off;
+      // per-scale tonal variation — no two plates quite alike
+      const tone = 224 + Math.round(hash2(row * 7 + 3, k * 13 + 1) * 18);
+      g.fillStyle = `rgb(${tone},${tone},${tone})`;
+      g.beginPath(); g.arc(cx, y0, rowH * 0.72, -2.6, -0.5); g.fill();
+      // specular glint on some scales
+      if (((row * 31 + k * 17) % 5) === 0) {
+        g.fillStyle = "rgba(255,255,255,0.5)";
+        g.beginPath(); g.arc(cx - rowH * 0.18, y0 - rowH * 0.3, 1.4, 0, Math.PI * 2); g.fill();
+      }
+      // light rim above, dark groove under each exposed edge
       g.lineWidth = 1.1;
-      g.strokeStyle = "rgba(255,255,255,0.85)";
-      g.beginPath(); g.arc(cx, y0 + 1.4, rowH * 0.66, -2.55, -0.6); g.stroke();
-      g.strokeStyle = "rgba(0,0,0,0.16)";
-      g.beginPath(); g.arc(cx, y0, rowH * 0.66, -2.55, -0.6); g.stroke();
+      g.strokeStyle = "rgba(255,255,255,0.55)";
+      g.beginPath(); g.arc(cx, y0 + 1.5, rowH * 0.7, -2.6, -0.5); g.stroke();
+      g.strokeStyle = "rgba(0,0,0,0.28)";
+      g.beginPath(); g.arc(cx, y0, rowH * 0.7, -2.6, -0.5); g.stroke();
     }
   }
   _scales = new THREE.CanvasTexture(c);
@@ -239,6 +249,9 @@ function buildBody(def: SpeciesDef): THREE.BufferGeometry {
     col = mix(col, C("#e6ece6"), ll * 0.18);
     // dorsal darkening seam
     col = mix(col, back, sstep(0.75, 0.95, yn) * 0.35);
+    // organic micro-mottle: living skin is never a flat gradient
+    const mot = (hash2(Math.floor(X * 21 + 5), Math.floor(Y * 27 + Z * 13)) - 0.5) * 0.07;
+    col.multiplyScalar(1 + mot);
 
     colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
   }
@@ -473,19 +486,28 @@ export function makeFish(def: SpeciesDef): FishRig {
     color: "#d8ece6", transparent: true, opacity: 0.22, roughness: 0.05, clearcoat: 1, depthWrite: false,
   });
   const specMat = new THREE.MeshBasicMaterial({ color: "#ffffff" });
+  // the eye must sit beyond the actual flank surface — including broad-headed
+  // species like catfish, whose head width at the eye exceeds W/2 — or the
+  // body's depth buffer hides the iris and the eye renders all white.
+  const tEye = 0.16;
+  const zSnE = 1 - (0.24 - A.snout * 0.12) * (1 - sstep(0, 0.18, tEye));
+  const hwE = 1 + (A.headWide - 1) * (1 - sstep(0.04, 0.34, tEye));
+  const halfW = W * 0.5 * zSnE * hwE;
+  const ballZ = Math.max(ez, halfW - eyeR * 0.45);
+  const surfZ = halfW + eyeR * 0.22;
   for (const sz of [1, -1]) {
     const ball = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 12, 10), ballMat);
-    ball.position.set(ex, ey, sz * ez);
-    const iris = new THREE.Mesh(new THREE.CircleGeometry(eyeR * 0.68, 14), irisMat);
-    iris.position.set(ex + eyeR * 0.22, ey, sz * (ez + eyeR * 0.62));
+    ball.position.set(ex, ey, sz * ballZ);
+    const iris = new THREE.Mesh(new THREE.CircleGeometry(eyeR * 0.66, 16), irisMat);
+    iris.position.set(ex + eyeR * 0.1, ey, sz * surfZ);
     iris.rotation.y = sz > 0 ? 0 : Math.PI; // disc faces outward from the head
-    const pupil = new THREE.Mesh(new THREE.CircleGeometry(eyeR * 0.34, 10), pupilMat);
-    pupil.position.set(ex + eyeR * 0.3, ey, sz * (ez + eyeR * 0.66));
+    const pupil = new THREE.Mesh(new THREE.CircleGeometry(eyeR * 0.32, 12), pupilMat);
+    pupil.position.set(ex + eyeR * 0.16, ey, sz * (surfZ + eyeR * 0.07));
     pupil.rotation.y = sz > 0 ? 0 : Math.PI;
-    const cornea = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 1.22, 12, 10), corneaMat);
-    cornea.position.set(ex, ey, sz * ez);
+    const cornea = new THREE.Mesh(new THREE.SphereGeometry(Math.max(eyeR * 1.45, surfZ - ballZ + eyeR * 0.25), 12, 10), corneaMat);
+    cornea.position.set(ex, ey, sz * ballZ);
     const spec = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.16, 6, 5), specMat);
-    spec.position.set(ex + eyeR * 0.3, ey + eyeR * 0.45, sz * (ez + eyeR * 0.7));
+    spec.position.set(ex + eyeR * 0.2, ey + eyeR * 0.42, sz * (surfZ + eyeR * 0.16));
     group.add(ball, iris, pupil, cornea, spec);
   }
 
